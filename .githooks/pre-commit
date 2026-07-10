@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+staged_files=$(git diff --cached --name-only)
+
+if printf '%s\n' "$staged_files" | rg -v '^\.env\.example$' | rg -q '^(docs/plans/|\.env($|\.)|.*\.pem$|.*\.key$)'; then
+  echo "Refusing commit: local plans, environment files, or private key files are staged." >&2
+  exit 1
+fi
+
+if git diff --cached -- . ':!pnpm-lock.yaml' | rg -n -i '(app_passcode|session_secret|database_url|api[_-]?key|private[_-]?key)\s*[:=]\s*["'"''][^"'"'']+'; then
+  echo "Refusing commit: a possible secret assignment was detected." >&2
+  exit 1
+fi
