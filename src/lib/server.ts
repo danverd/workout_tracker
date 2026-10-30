@@ -1,32 +1,27 @@
 import { cookies, headers } from "next/headers";
-import { NextResponse } from "next/server";
-import { cookieName, isAuthenticated } from "@/lib/auth";
+import { SESSION_COOKIE, isAuthenticated } from "@/lib/auth";
+import { HttpError } from "@/lib/http";
 
 export async function requireSession() {
-  if (!(await isAuthenticated((await cookies()).get(cookieName)?.value)))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  return null;
+  if (!(await isAuthenticated((await cookies()).get(SESSION_COOKIE)?.value)))
+    throw new HttpError(401, "Unauthorized");
 }
+
 export async function requireSameOrigin() {
-  const origin = (await headers()).get("origin");
-  const host = (await headers()).get("host");
+  const requestHeaders = await headers();
+  const origin = requestHeaders.get("origin");
+  const host = requestHeaders.get("host");
   let originHost: string | undefined;
   try {
     originHost = origin ? new URL(origin).host : undefined;
   } catch {
-    return NextResponse.json(
-      { error: "Invalid request origin" },
-      { status: 403 },
-    );
+    throw new HttpError(403, "Invalid request origin");
   }
   if (originHost && host && originHost !== host)
-    return NextResponse.json(
-      { error: "Invalid request origin" },
-      { status: 403 },
-    );
-  return null;
+    throw new HttpError(403, "Invalid request origin");
 }
 
 export async function requireMutationSession() {
-  return (await requireSession()) ?? (await requireSameOrigin());
+  await requireSession();
+  await requireSameOrigin();
 }

@@ -27,7 +27,6 @@ import {
   updateExercise,
   updateLocation,
   updateSettings,
-  type Result,
 } from "@/features/setup/mutations";
 import { groupByMovement } from "@/features/setup/group-exercises";
 import { exerciseInputSchema } from "@/lib/validation/setup";
@@ -38,82 +37,75 @@ beforeAll(async () => {
   db = await createTestDb();
 }, 60_000);
 
-function value<T>(result: Result<T>): T {
-  if (!result.ok) throw new Error(result.error);
-  return result.value;
-}
-
 describe("equipment and movements", () => {
   it("creates, renames, rejects duplicates case-insensitively", async () => {
-    const bench = value(
-      await createEquipment(db, { name: "Flat bench", hasWeights: false }),
-    );
-    expect(bench.usage).toBeNull();
-    const dup = await createEquipment(db, {
-      name: "flat BENCH",
+    const bench = await createEquipment(db, {
+      name: "Flat bench",
       hasWeights: false,
     });
-    expect(dup).toMatchObject({ ok: false, status: 409 });
+    expect(bench.usage).toBeNull();
+    await expect(
+      createEquipment(db, { name: "flat BENCH", hasWeights: false }),
+    ).rejects.toMatchObject({ status: 409 });
 
-    const renamed = value(
-      await updateEquipment(db, bench.id, { name: "Bench", hasWeights: true }),
-    );
+    const renamed = await updateEquipment(db, bench.id, {
+      name: "Bench",
+      hasWeights: true,
+    });
     expect(renamed).toMatchObject({ name: "Bench", hasWeights: true });
-    expect(
-      await updateEquipment(db, crypto.randomUUID(), {
+    await expect(
+      updateEquipment(db, crypto.randomUUID(), {
         name: "X",
         hasWeights: false,
       }),
-    ).toMatchObject({ ok: false, status: 404 });
+    ).rejects.toMatchObject({ status: 404 });
   });
 
   it("deletes unused equipment but blocks when in use", async () => {
-    const used = value(
-      await createEquipment(db, { name: "Used rack", hasWeights: false }),
-    );
-    const spare = value(
-      await createEquipment(db, { name: "Spare rack", hasWeights: false }),
-    );
-    value(
-      await createExercise(db, {
-        name: "Rack pull",
-        movementId: null,
-        loadType: "total",
-        baseWeight: 0,
-        weightEquipmentId: null,
-        increment: 5,
-        equipmentIds: [used.id],
-      }),
-    );
+    const used = await createEquipment(db, {
+      name: "Used rack",
+      hasWeights: false,
+    });
+    const spare = await createEquipment(db, {
+      name: "Spare rack",
+      hasWeights: false,
+    });
+    await createExercise(db, {
+      name: "Rack pull",
+      movementId: null,
+      loadType: "total",
+      baseWeight: 0,
+      weightEquipmentId: null,
+      increment: 5,
+      equipmentIds: [used.id],
+    });
 
-    const blocked = await deleteEquipment(db, used.id);
-    expect(blocked).toMatchObject({ ok: false, status: 409 });
-    expect(blocked.ok ? "" : blocked.error).toContain("1 exercise");
+    await expect(deleteEquipment(db, used.id)).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining("1 exercise"),
+    });
 
-    expect(await deleteEquipment(db, spare.id)).toMatchObject({ ok: true });
+    await expect(deleteEquipment(db, spare.id)).resolves.toBeDefined();
     const names = (await listEquipment(db)).map((e) => e.name);
     expect(names).not.toContain("Spare rack");
   });
 
   it("deletes movements only when no exercise uses them", async () => {
-    const hinge = value(await createMovement(db, { name: "Hinge" }));
-    const squat = value(await createMovement(db, { name: "Squat" }));
-    value(
-      await createExercise(db, {
-        name: "Romanian deadlift",
-        movementId: hinge.id,
-        loadType: "per_side",
-        baseWeight: 45,
-        weightEquipmentId: null,
-        increment: 5,
-        equipmentIds: [],
-      }),
-    );
-    expect(await deleteMovement(db, hinge.id)).toMatchObject({
-      ok: false,
+    const hinge = await createMovement(db, { name: "Hinge" });
+    const squat = await createMovement(db, { name: "Squat" });
+    await createExercise(db, {
+      name: "Romanian deadlift",
+      movementId: hinge.id,
+      loadType: "per_side",
+      baseWeight: 45,
+      weightEquipmentId: null,
+      increment: 5,
+      equipmentIds: [],
+    });
+    await expect(deleteMovement(db, hinge.id)).rejects.toMatchObject({
       status: 409,
     });
-    expect(await deleteMovement(db, squat.id)).toMatchObject({ ok: true });
+    await expect(deleteMovement(db, squat.id)).resolves.toBeDefined();
     const movements = await listMovements(db);
     expect(movements.find((m) => m.id === hinge.id)?.usage).toBe("1 exercise");
   });
@@ -121,21 +113,21 @@ describe("equipment and movements", () => {
 
 describe("locations", () => {
   it("persists weights ascending and de-duplicated, null for non-weighted", async () => {
-    const dumbbells = value(
-      await createEquipment(db, { name: "Dumbbells", hasWeights: true }),
-    );
-    const incline = value(
-      await createEquipment(db, { name: "Incline bench", hasWeights: false }),
-    );
-    const home = value(
-      await createLocation(db, {
-        name: "Home",
-        equipment: [
-          { equipmentId: dumbbells.id, weights: [20, 5, 10, 10, 15] },
-          { equipmentId: incline.id, weights: [1, 2] },
-        ],
-      }),
-    );
+    const dumbbells = await createEquipment(db, {
+      name: "Dumbbells",
+      hasWeights: true,
+    });
+    const incline = await createEquipment(db, {
+      name: "Incline bench",
+      hasWeights: false,
+    });
+    const home = await createLocation(db, {
+      name: "Home",
+      equipment: [
+        { equipmentId: dumbbells.id, weights: [20, 5, 10, 10, 15] },
+        { equipmentId: incline.id, weights: [1, 2] },
+      ],
+    });
     expect(home.archived).toBe(false);
     const byId = Object.fromEntries(
       home.equipment.map((e) => [e.equipmentId, e.weights]),
@@ -144,12 +136,10 @@ describe("locations", () => {
     expect(byId[incline.id]).toBeNull();
 
     // Toggling a weight off and saving replaces the list.
-    const updated = value(
-      await updateLocation(db, home.id, {
-        name: "Home gym",
-        equipment: [{ equipmentId: dumbbells.id, weights: [5, 10, 20] }],
-      }),
-    );
+    const updated = await updateLocation(db, home.id, {
+      name: "Home gym",
+      equipment: [{ equipmentId: dumbbells.id, weights: [5, 10, 20] }],
+    });
     expect(updated.name).toBe("Home gym");
     expect(updated.equipment).toEqual([
       { equipmentId: dumbbells.id, weights: [5, 10, 20] },
@@ -158,27 +148,23 @@ describe("locations", () => {
   });
 
   it("rejects unknown equipment and duplicate names", async () => {
-    expect(
-      await createLocation(db, {
+    await expect(
+      createLocation(db, {
         name: "Ghost",
         equipment: [{ equipmentId: crypto.randomUUID(), weights: null }],
       }),
-    ).toMatchObject({ ok: false, status: 400 });
+    ).rejects.toMatchObject({ status: 400 });
     expect(
       await getLocation(db, "00000000-0000-4000-8000-000000000000"),
     ).toBeNull();
-    expect(
-      await createLocation(db, { name: "home gym", equipment: [] }),
-    ).toMatchObject({ ok: false, status: 409 });
+    await expect(
+      createLocation(db, { name: "home gym", equipment: [] }),
+    ).rejects.toMatchObject({ status: 409 });
   });
 
   it("deletes unused locations and requires archiving when sessions reference them", async () => {
-    const gym = value(
-      await createLocation(db, { name: "Elm St", equipment: [] }),
-    );
-    const temp = value(
-      await createLocation(db, { name: "Temp", equipment: [] }),
-    );
+    const gym = await createLocation(db, { name: "Elm St", equipment: [] });
+    const temp = await createLocation(db, { name: "Temp", equipment: [] });
     await db.insert(s.sessions).values({
       id: crypto.randomUUID(),
       date: "2026-10-01",
@@ -186,40 +172,39 @@ describe("locations", () => {
       locationId: gym.id,
     });
 
-    const blocked = await deleteLocation(db, gym.id);
-    expect(blocked).toMatchObject({ ok: false, status: 409 });
-    expect(await deleteLocation(db, temp.id)).toMatchObject({ ok: true });
+    await expect(deleteLocation(db, gym.id)).rejects.toMatchObject({
+      status: 409,
+    });
+    await expect(deleteLocation(db, temp.id)).resolves.toBeDefined();
 
-    const archived = value(await setLocationArchived(db, gym.id, true));
+    const archived = await setLocationArchived(db, gym.id, true);
     expect(archived.archived).toBe(true);
     expect(archived.sessionCount).toBe(1);
-    expect(value(await setLocationArchived(db, gym.id, false)).archived).toBe(
-      false,
-    );
+    expect((await setLocationArchived(db, gym.id, false)).archived).toBe(false);
     expect((await getSetupCounts(db)).locations).toBeGreaterThanOrEqual(1);
   });
 });
 
 describe("exercises", () => {
   it("creates with equipment and weight equipment, then updates", async () => {
-    const stack = value(
-      await createEquipment(db, { name: "Cable stack", hasWeights: true }),
-    );
-    const pulley = value(
-      await createEquipment(db, { name: "Pulley", hasWeights: false }),
-    );
-    const movement = value(await createMovement(db, { name: "Vertical pull" }));
-    const created = value(
-      await createExercise(db, {
-        name: "Lat pulldown",
-        movementId: movement.id,
-        loadType: "total",
-        baseWeight: 0,
-        weightEquipmentId: stack.id,
-        increment: 10,
-        equipmentIds: [stack.id, pulley.id],
-      }),
-    );
+    const stack = await createEquipment(db, {
+      name: "Cable stack",
+      hasWeights: true,
+    });
+    const pulley = await createEquipment(db, {
+      name: "Pulley",
+      hasWeights: false,
+    });
+    const movement = await createMovement(db, { name: "Vertical pull" });
+    const created = await createExercise(db, {
+      name: "Lat pulldown",
+      movementId: movement.id,
+      loadType: "total",
+      baseWeight: 0,
+      weightEquipmentId: stack.id,
+      increment: 10,
+      equipmentIds: [stack.id, pulley.id],
+    });
     expect(created).toMatchObject({
       loadType: "total",
       weightEquipmentId: stack.id,
@@ -230,21 +215,19 @@ describe("exercises", () => {
       [stack.id, pulley.id].sort(),
     );
 
-    const updated = value(
-      await updateExercise(db, created.id, {
-        name: "Wide lat pulldown",
-        movementId: null,
-        loadType: "total",
-        baseWeight: 0,
-        weightEquipmentId: null,
-        increment: 5,
-        equipmentIds: [pulley.id],
-      }),
-    );
+    const updated = await updateExercise(db, created.id, {
+      name: "Wide lat pulldown",
+      movementId: null,
+      loadType: "total",
+      baseWeight: 0,
+      weightEquipmentId: null,
+      increment: 5,
+      equipmentIds: [pulley.id],
+    });
     expect(updated.equipmentIds).toEqual([pulley.id]);
     expect(updated.movementId).toBeNull();
-    expect(
-      await createExercise(db, {
+    await expect(
+      createExercise(db, {
         name: "wide lat pulldown",
         movementId: null,
         loadType: "total",
@@ -253,21 +236,19 @@ describe("exercises", () => {
         increment: 5,
         equipmentIds: [],
       }),
-    ).toMatchObject({ ok: false, status: 409 });
+    ).rejects.toMatchObject({ status: 409 });
   });
 
   it("archives instead of deleting when history references it", async () => {
-    const lift = value(
-      await createExercise(db, {
-        name: "Dip",
-        movementId: null,
-        loadType: "bodyweight",
-        baseWeight: 0,
-        weightEquipmentId: null,
-        increment: 5,
-        equipmentIds: [],
-      }),
-    );
+    const lift = await createExercise(db, {
+      name: "Dip",
+      movementId: null,
+      loadType: "bodyweight",
+      baseWeight: 0,
+      weightEquipmentId: null,
+      increment: 5,
+      equipmentIds: [],
+    });
     const sessionId = crypto.randomUUID();
     await db
       .insert(s.sessions)
@@ -281,26 +262,23 @@ describe("exercises", () => {
       loadType: "bodyweight",
     });
 
-    const blocked = await deleteExercise(db, lift.id);
-    expect(blocked).toMatchObject({ ok: false, status: 409 });
+    await expect(deleteExercise(db, lift.id)).rejects.toMatchObject({
+      status: 409,
+    });
     expect((await getExercise(db, lift.id))?.usage).toBe("1 logged workout");
 
-    expect(value(await setExerciseArchived(db, lift.id, true)).archived).toBe(
-      true,
-    );
+    expect((await setExerciseArchived(db, lift.id, true)).archived).toBe(true);
 
-    const spare = value(
-      await createExercise(db, {
-        name: "Spare lift",
-        movementId: null,
-        loadType: "total",
-        baseWeight: 0,
-        weightEquipmentId: null,
-        increment: 5,
-        equipmentIds: [],
-      }),
-    );
-    expect(await deleteExercise(db, spare.id)).toMatchObject({ ok: true });
+    const spare = await createExercise(db, {
+      name: "Spare lift",
+      movementId: null,
+      loadType: "total",
+      baseWeight: 0,
+      weightEquipmentId: null,
+      increment: 5,
+      equipmentIds: [],
+    });
+    await expect(deleteExercise(db, spare.id)).resolves.toBeDefined();
     expect((await listExercises(db)).some((e) => e.id === spare.id)).toBe(
       false,
     );
@@ -332,7 +310,7 @@ describe("exercises", () => {
 describe("settings and helpers", () => {
   it("reads defaults and updates bodyweight", async () => {
     expect((await getSettings(db)).bodyweightLb).toBe(0);
-    const next = value(await updateSettings(db, { bodyweightLb: 185 }));
+    const next = await updateSettings(db, { bodyweightLb: 185 });
     expect(next.bodyweightLb).toBe(185);
     expect((await getSettings(db)).bodyweightLb).toBe(185);
   });

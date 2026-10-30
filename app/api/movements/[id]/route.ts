@@ -1,23 +1,18 @@
+import { getDb } from "@/db/client";
 import { deleteMovement, updateMovement } from "@/features/setup/mutations";
-import {
-  handleAction,
-  handleWrite,
-  notFound,
-  readId,
-  type IdContext,
-} from "@/features/setup/route";
+import { parseId, parseJson, route } from "@/lib/http";
 import { movementInputSchema } from "@/lib/validation/setup";
 
-export async function PUT(request: Request, context: IdContext) {
-  const id = await readId(context);
-  if (!id) return notFound();
-  return handleWrite(request, movementInputSchema, (db, input) =>
-    updateMovement(db, id, input),
-  );
-}
+type Params = { id: string };
 
-export async function DELETE(_request: Request, context: IdContext) {
-  const id = await readId(context);
-  if (!id) return notFound();
-  return handleAction((db) => deleteMovement(db, id));
-}
+export const PUT = route<Params>("mutation", async (request, { id }) =>
+  updateMovement(
+    await getDb(),
+    parseId(id),
+    await parseJson(request, movementInputSchema),
+  ),
+);
+
+export const DELETE = route<Params>("mutation", async (_request, { id }) =>
+  deleteMovement(await getDb(), parseId(id)),
+);

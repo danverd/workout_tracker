@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { apiPost } from "@/lib/api";
 import { Button } from "@/ui/Button";
 import { TextField } from "@/ui/TextField";
 
@@ -15,16 +16,14 @@ export default function LoginPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     setSubmitting(true);
-    const response = await fetch("/api/session", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ passcode }),
-    }).catch(() => null);
-    setSubmitting(false);
-    if (!response?.ok) {
+    try {
+      await apiPost("/api/session", { passcode });
+    } catch {
+      setSubmitting(false);
       setError("Invalid passcode");
       return;
     }
+    setSubmitting(false);
     router.push("/");
     router.refresh();
   }

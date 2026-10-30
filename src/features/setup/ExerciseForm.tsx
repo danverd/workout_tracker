@@ -9,9 +9,10 @@ import type {
   MovementRow,
 } from "@/db/queries/setup";
 import { ConfirmButton } from "@/features/setup/ConfirmButton";
-import { errorMessage } from "@/features/setup/errors";
+
 import { LoadTypePicker } from "@/features/setup/LoadTypePicker";
 import { ApiError, apiDelete, apiPatch, apiPost, apiPut } from "@/lib/api";
+import { useAsyncAction } from "@/lib/use-async-action";
 import type { LoadType } from "@/types/domain";
 import { Button } from "@/ui/Button";
 import { ChipGroup } from "@/ui/ChipGroup";
@@ -52,11 +53,10 @@ export function ExerciseForm({
     exercise?.increment ?? 5,
   );
   const [newMovement, setNewMovement] = useState("");
-  const [movementError, setMovementError] = useState<string | null>(null);
+  const { error: movementError, run: runMovement } = useAsyncAction();
+  const { busy, error, run } = useAsyncAction();
   const [nameError, setNameError] = useState<string | undefined>();
-  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const weightChoices = equipment.filter(
     (item) => item.hasWeights && equipmentIds.includes(item.id),
@@ -77,23 +77,18 @@ export function ExerciseForm({
   async function addMovement() {
     const movementName = newMovement.trim();
     if (!movementName) return;
-    setMovementError(null);
-    try {
+    await runMovement(async () => {
       const row = await apiPost<MovementRow>("/api/movements", {
         name: movementName,
       });
       setMovements((current) => [...current, row]);
       setMovementId(row.id);
       setNewMovement("");
-    } catch (e) {
-      setMovementError(errorMessage(e));
-    }
+    });
   }
 
   async function save(another: boolean) {
     if (!valid || busy) return;
-    setBusy(true);
-    setError(null);
     setNameError(undefined);
     setNotice(null);
     const body = {
@@ -105,19 +100,25 @@ export function ExerciseForm({
       increment,
       equipmentIds,
     };
-    try {
-      if (exercise) await apiPut(`/api/exercises/${exercise.id}`, body);
-      else await apiPost("/api/exercises", body);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409) setNameError(e.message);
-      else setError(errorMessage(e));
-      setBusy(false);
-      return;
-    }
+    const saved = await run(
+      () =>
+        exercise
+          ? apiPut(`/api/exercises/${exercise.id}`, body)
+          : apiPost("/api/exercises", body),
+      {
+        keepBusy: !(another && !exercise),
+        onError: (e) => {
+          if (e instanceof ApiError && e.status === 409) {
+            setNameError(e.message);
+            return true;
+          }
+        },
+      },
+    );
+    if (!saved) return;
     if (another && !exercise) {
       setNotice(`Saved ${name.trim()}. Add the next one.`);
       setName("");
-      setBusy(false);
       formRef.current
         ?.querySelector<HTMLInputElement>('input[name="exercise-name"]')
         ?.focus();
@@ -129,16 +130,9 @@ export function ExerciseForm({
   }
 
   async function archiveOrDelete(task: () => Promise<unknown>) {
-    setBusy(true);
-    setError(null);
-    try {
-      await task();
-      router.push("/setup/exercises");
-      router.refresh();
-    } catch (e) {
-      setError(errorMessage(e));
-      setBusy(false);
-    }
+    if (!(await run(task, { keepBusy: true }))) return;
+    router.push("/setup/exercises");
+    router.refresh();
   }
 
   return (

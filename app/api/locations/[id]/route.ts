@@ -1,38 +1,30 @@
+import { getDb } from "@/db/client";
 import {
   deleteLocation,
   setLocationArchived,
   updateLocation,
 } from "@/features/setup/mutations";
-import {
-  handleAction,
-  handleWrite,
-  notFound,
-  readId,
-  type IdContext,
-} from "@/features/setup/route";
+import { parseId, parseJson, route } from "@/lib/http";
 import {
   archiveInputSchema,
   locationInputSchema,
 } from "@/lib/validation/setup";
 
-export async function PUT(request: Request, context: IdContext) {
-  const id = await readId(context);
-  if (!id) return notFound();
-  return handleWrite(request, locationInputSchema, (db, input) =>
-    updateLocation(db, id, input),
-  );
-}
+type Params = { id: string };
 
-export async function PATCH(request: Request, context: IdContext) {
-  const id = await readId(context);
-  if (!id) return notFound();
-  return handleWrite(request, archiveInputSchema, (db, input) =>
-    setLocationArchived(db, id, input.archived),
-  );
-}
+export const PUT = route<Params>("mutation", async (request, { id }) =>
+  updateLocation(
+    await getDb(),
+    parseId(id),
+    await parseJson(request, locationInputSchema),
+  ),
+);
 
-export async function DELETE(_request: Request, context: IdContext) {
-  const id = await readId(context);
-  if (!id) return notFound();
-  return handleAction((db) => deleteLocation(db, id));
-}
+export const PATCH = route<Params>("mutation", async (request, { id }) => {
+  const { archived } = await parseJson(request, archiveInputSchema);
+  return setLocationArchived(await getDb(), parseId(id), archived);
+});
+
+export const DELETE = route<Params>("mutation", async (_request, { id }) =>
+  deleteLocation(await getDb(), parseId(id)),
+);

@@ -2,9 +2,9 @@
 
 import { useRef, useState } from "react";
 
-import { errorMessage } from "@/features/setup/errors";
 import { ConfirmButton } from "@/features/setup/ConfirmButton";
-import { apiDelete, apiPost, apiPut } from "@/lib/api";
+import { apiDelete, apiPost, apiPut, errorMessage } from "@/lib/api";
+import { useAsyncAction } from "@/lib/use-async-action";
 import { BottomSheet } from "@/ui/BottomSheet";
 import { Button } from "@/ui/Button";
 import { Chip } from "@/ui/Chip";
@@ -193,37 +193,31 @@ function EditForm({
   onDeleted: (id: string) => void;
 }) {
   const [name, setName] = useState(row.name);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, error, run } = useAsyncAction();
   const url = `/api/${kind}/${row.id}`;
 
   async function save(event: React.SyntheticEvent) {
     event.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      onSaved(
-        await apiPut<NameRow>(url, {
-          name,
-          ...(kind === "equipment" ? { hasWeights: row.hasWeights } : {}),
-        }),
-      );
-    } catch (e) {
-      setError(errorMessage(e));
-      setBusy(false);
-    }
+    await run(
+      async () =>
+        onSaved(
+          await apiPut<NameRow>(url, {
+            name,
+            ...(kind === "equipment" ? { hasWeights: row.hasWeights } : {}),
+          }),
+        ),
+      { keepBusy: true },
+    );
   }
 
   async function remove() {
-    setBusy(true);
-    setError(null);
-    try {
-      await apiDelete(url);
-      onDeleted(row.id);
-    } catch (e) {
-      setError(errorMessage(e));
-      setBusy(false);
-    }
+    await run(
+      async () => {
+        await apiDelete(url);
+        onDeleted(row.id);
+      },
+      { keepBusy: true },
+    );
   }
 
   return (

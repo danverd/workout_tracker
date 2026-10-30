@@ -1,14 +1,16 @@
+import { getDb } from "@/db/client";
 import { listEquipment } from "@/db/queries/setup";
 import { createEquipment } from "@/features/setup/mutations";
-import { handleRead, handleWrite } from "@/features/setup/route";
+import { created, parseJson, route } from "@/lib/http";
 import { equipmentInputSchema } from "@/lib/validation/setup";
 
-export const GET = () => handleRead((db) => listEquipment(db));
+export const GET = route("read", async () => listEquipment(await getDb()));
 
-export const POST = (request: Request) =>
-  handleWrite(
-    request,
-    equipmentInputSchema,
-    (db, input) => createEquipment(db, input),
-    201,
-  );
+export const POST = route("mutation", async (request) =>
+  created(
+    await createEquipment(
+      await getDb(),
+      await parseJson(request, equipmentInputSchema),
+    ),
+  ),
+);

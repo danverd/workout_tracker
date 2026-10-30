@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { createSession, cookieName, verifyPasscode } from "@/lib/auth";
+import { createSession, SESSION_COOKIE, verifyPasscode } from "@/lib/auth";
 import {
   hashClientIdentifier,
   clientIdentifier,
   recordFailedAttempt,
   tooManyAttempts,
 } from "@/lib/rate-limit";
+import { HttpError } from "@/lib/http";
 import { requireSameOrigin } from "@/lib/server";
 
 export async function POST(request: Request) {
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unable to sign in." }, { status: 401 });
   }
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(cookieName, await createSession(), {
+  response.cookies.set(SESSION_COOKIE, await createSession(), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -32,9 +33,17 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE() {
-  const denied = await requireSameOrigin();
-  if (denied) return denied;
+  try {
+    await requireSameOrigin();
+  } catch (error) {
+    if (error instanceof HttpError)
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    throw error;
+  }
   const response = NextResponse.json({ ok: true });
-  response.cookies.delete(cookieName);
+  response.cookies.delete(SESSION_COOKIE);
   return response;
 }

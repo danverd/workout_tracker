@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { asc, eq, inArray, sql } from "drizzle-orm";
+import { HttpError } from "@/lib/http";
 import type { Database } from "@/db/client";
 import * as s from "@/db/schema";
 import type { ProgramSaveInput } from "@/lib/validation/programs";
@@ -12,12 +13,9 @@ import type {
 } from "@/types/domain";
 
 /** Thrown for a bad reference or state; routes map it to a 4xx status. */
-export class ProgramError extends Error {
-  constructor(
-    message: string,
-    readonly status: 400 | 404 | 409,
-  ) {
-    super(message);
+export class ProgramError extends HttpError {
+  constructor(message: string, status: 400 | 404 | 409) {
+    super(status, message);
     this.name = "ProgramError";
   }
 }

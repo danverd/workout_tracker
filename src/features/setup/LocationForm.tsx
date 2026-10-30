@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import type { EquipmentRow, LocationRow } from "@/db/queries/setup";
 import { ConfirmButton } from "@/features/setup/ConfirmButton";
-import { errorMessage } from "@/features/setup/errors";
+
 import {
   emptyWeightList,
   fromWeights,
@@ -15,6 +15,7 @@ import {
 } from "@/features/setup/weight-list";
 import { WeightEditor } from "@/features/setup/WeightEditor";
 import { ApiError, apiDelete, apiPatch, apiPost, apiPut } from "@/lib/api";
+import { useAsyncAction } from "@/lib/use-async-action";
 import { Button } from "@/ui/Button";
 import { buttonClass } from "@/ui/button-styles";
 import { ChipGroup } from "@/ui/ChipGroup";
@@ -39,9 +40,8 @@ export function LocationForm({
     }
     return initial;
   });
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, run: runAction } = useAsyncAction();
   const [nameError, setNameError] = useState<string | undefined>();
-  const [busy, setBusy] = useState(false);
 
   if (equipment.length === 0) {
     return (
@@ -61,18 +61,19 @@ export function LocationForm({
   );
 
   async function run(task: () => Promise<unknown>, after?: () => void) {
-    setBusy(true);
-    setError(null);
     setNameError(undefined);
-    try {
-      await task();
-      (after ?? (() => router.push("/setup/locations")))();
-      router.refresh();
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409) setNameError(e.message);
-      else setError(errorMessage(e));
-      setBusy(false);
-    }
+    const ok = await runAction(task, {
+      keepBusy: true,
+      onError: (e) => {
+        if (e instanceof ApiError && e.status === 409) {
+          setNameError(e.message);
+          return true;
+        }
+      },
+    });
+    if (!ok) return;
+    (after ?? (() => router.push("/setup/locations")))();
+    router.refresh();
   }
 
   function save(event: React.SyntheticEvent) {

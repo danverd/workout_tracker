@@ -1,14 +1,16 @@
+import { getDb } from "@/db/client";
 import { listMovements } from "@/db/queries/setup";
 import { createMovement } from "@/features/setup/mutations";
-import { handleRead, handleWrite } from "@/features/setup/route";
+import { created, parseJson, route } from "@/lib/http";
 import { movementInputSchema } from "@/lib/validation/setup";
 
-export const GET = () => handleRead((db) => listMovements(db));
+export const GET = route("read", async () => listMovements(await getDb()));
 
-export const POST = (request: Request) =>
-  handleWrite(
-    request,
-    movementInputSchema,
-    (db, input) => createMovement(db, input),
-    201,
-  );
+export const POST = route("mutation", async (request) =>
+  created(
+    await createMovement(
+      await getDb(),
+      await parseJson(request, movementInputSchema),
+    ),
+  ),
+);

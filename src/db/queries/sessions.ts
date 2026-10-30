@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
+import { HttpError } from "@/lib/http";
 import * as s from "@/db/schema";
 import { todayInAppTimeZone } from "@/lib/dates";
 import { nextProgramDay } from "@/lib/domain/rotation";
@@ -26,12 +27,10 @@ import type {
 } from "@/types/domain";
 
 /** Error with an HTTP status, mapped to a JSON response by the routes. */
-export class SessionQueryError extends Error {
-  readonly status: number;
+export class SessionQueryError extends HttpError {
   constructor(status: number, message: string) {
-    super(message);
+    super(status, message);
     this.name = "SessionQueryError";
-    this.status = status;
   }
 }
 

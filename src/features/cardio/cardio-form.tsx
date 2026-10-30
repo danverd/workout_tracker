@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ApiError, apiPut } from "@/lib/api";
+import { apiPut } from "@/lib/api";
+import { useAsyncAction } from "@/lib/use-async-action";
 import type { CardioInput } from "@/lib/validation/sessions";
 import type { DistanceUnit } from "@/types/domain";
 import { Button } from "@/ui/Button";
@@ -21,15 +22,18 @@ export function CardioForm({ recent }: { recent: string[] }) {
   const [distance, setDistance] = useState<number | null>(null);
   const [unit, setUnit] = useState<DistanceUnit>("mi");
   const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    busy: saving,
+    error,
+    run,
+  } = useAsyncAction(
+    "Not saved. Check your connection and tap Save cardio again.",
+  );
 
   const chips = recent.length > 0 ? recent : DEFAULT_ACTIVITIES;
   const canSave = activity.trim().length > 0 && !saving;
 
   async function save() {
-    setSaving(true);
-    setError(null);
     const body: Omit<CardioInput, "date" | "startedAt"> = {
       id,
       locationId: null,
@@ -39,18 +43,12 @@ export function CardioForm({ recent }: { recent: string[] }) {
       distanceUnit: distance === null ? null : unit,
       notes: notes.trim(),
     };
-    try {
-      await apiPut(`/api/cardio/${id}`, body);
-      router.push("/");
-      router.refresh();
-    } catch (caught) {
-      setError(
-        caught instanceof ApiError && !caught.retryable
-          ? caught.message
-          : "Not saved. Check your connection and tap Save cardio again.",
-      );
-      setSaving(false);
-    }
+    if (
+      !(await run(() => apiPut(`/api/cardio/${id}`, body), { keepBusy: true }))
+    )
+      return;
+    router.push("/");
+    router.refresh();
   }
 
   return (

@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { timingSafeEqual, scryptSync } from "node:crypto";
 
-const cookieName = "workout_session";
+export const SESSION_COOKIE = "workout_session";
 const encoder = new TextEncoder();
 
 function secret() {
@@ -39,5 +39,3 @@ export async function isAuthenticated(token?: string) {
     return false;
   }
 }
-
-export { cookieName };

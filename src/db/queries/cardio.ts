@@ -1,12 +1,18 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "@/db/client";
+import { HttpError } from "@/lib/http";
 import * as s from "@/db/schema";
 import { getSessionDetail } from "@/db/queries/history";
 import { todayInAppTimeZone } from "@/lib/dates";
 import type { CardioInput } from "@/lib/validation/sessions";
 import type { SessionDto } from "@/types/domain";
 
-export class CardioConflictError extends Error {}
+export class CardioConflictError extends HttpError {
+  constructor(message: string) {
+    super(409, message);
+    this.name = "CardioConflictError";
+  }
+}
 
 /**
  * Idempotent create/update keyed by the client id. Replaying the same

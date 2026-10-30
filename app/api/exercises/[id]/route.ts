@@ -1,38 +1,30 @@
+import { getDb } from "@/db/client";
 import {
   deleteExercise,
   setExerciseArchived,
   updateExercise,
 } from "@/features/setup/mutations";
-import {
-  handleAction,
-  handleWrite,
-  notFound,
-  readId,
-  type IdContext,
-} from "@/features/setup/route";
+import { parseId, parseJson, route } from "@/lib/http";
 import {
   archiveInputSchema,
   exerciseInputSchema,
 } from "@/lib/validation/setup";
 
-export async function PUT(request: Request, context: IdContext) {
-  const id = await readId(context);
-  if (!id) return notFound();
-  return handleWrite(request, exerciseInputSchema, (db, input) =>
-    updateExercise(db, id, input),
-  );
-}
+type Params = { id: string };
 
-export async function PATCH(request: Request, context: IdContext) {
-  const id = await readId(context);
-  if (!id) return notFound();
-  return handleWrite(request, archiveInputSchema, (db, input) =>
-    setExerciseArchived(db, id, input.archived),
-  );
-}
+export const PUT = route<Params>("mutation", async (request, { id }) =>
+  updateExercise(
+    await getDb(),
+    parseId(id),
+    await parseJson(request, exerciseInputSchema),
+  ),
+);
 
-export async function DELETE(_request: Request, context: IdContext) {
-  const id = await readId(context);
-  if (!id) return notFound();
-  return handleAction((db) => deleteExercise(db, id));
-}
+export const PATCH = route<Params>("mutation", async (request, { id }) => {
+  const { archived } = await parseJson(request, archiveInputSchema);
+  return setExerciseArchived(await getDb(), parseId(id), archived);
+});
+
+export const DELETE = route<Params>("mutation", async (_request, { id }) =>
+  deleteExercise(await getDb(), parseId(id)),
+);

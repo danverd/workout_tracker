@@ -2,29 +2,23 @@
 
 import { useState } from "react";
 
-import { errorMessage } from "@/features/setup/errors";
 import { apiPut } from "@/lib/api";
+import { useAsyncAction } from "@/lib/use-async-action";
 import { Button } from "@/ui/Button";
 import { NumberField } from "@/ui/NumberField";
 import { SaveStatus } from "@/ui/SaveStatus";
 
 export function SettingsForm({ bodyweightLb }: { bodyweightLb: number }) {
   const [value, setValue] = useState<number | null>(bodyweightLb || null);
-  const [state, setState] = useState<"saved" | "saving" | "error" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const { busy, error, run } = useAsyncAction();
+  const state = busy ? "saving" : error ? "error" : saved ? "saved" : null;
 
   async function save(event: React.SyntheticEvent) {
     event.preventDefault();
     if (value === null) return;
-    setState("saving");
-    setError(null);
-    try {
-      await apiPut("/api/settings", { bodyweightLb: value });
-      setState("saved");
-    } catch (e) {
-      setError(errorMessage(e));
-      setState("error");
-    }
+    setSaved(false);
+    setSaved(await run(() => apiPut("/api/settings", { bodyweightLb: value })));
   }
 
   return (
@@ -35,7 +29,7 @@ export function SettingsForm({ bodyweightLb }: { bodyweightLb: number }) {
         value={value}
         onChange={(next) => {
           setValue(next);
-          setState(null);
+          setSaved(false);
         }}
         hint="Used for bodyweight and assisted exercises. Past workouts keep the weight they were logged with."
       />
@@ -43,7 +37,7 @@ export function SettingsForm({ bodyweightLb }: { bodyweightLb: number }) {
         type="submit"
         variant="primary"
         block
-        disabled={value === null || state === "saving"}
+        disabled={value === null || busy}
       >
         Save bodyweight
       </Button>

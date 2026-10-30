@@ -1,23 +1,18 @@
+import { getDb } from "@/db/client";
 import { deleteEquipment, updateEquipment } from "@/features/setup/mutations";
-import {
-  handleAction,
-  handleWrite,
-  notFound,
-  readId,
-  type IdContext,
-} from "@/features/setup/route";
+import { parseId, parseJson, route } from "@/lib/http";
 import { equipmentInputSchema } from "@/lib/validation/setup";
 
-export async function PUT(request: Request, context: IdContext) {
-  const id = await readId(context);
-  if (!id) return notFound();
-  return handleWrite(request, equipmentInputSchema, (db, input) =>
-    updateEquipment(db, id, input),
-  );
-}
+type Params = { id: string };
 
-export async function DELETE(_request: Request, context: IdContext) {
-  const id = await readId(context);
-  if (!id) return notFound();
-  return handleAction((db) => deleteEquipment(db, id));
-}
+export const PUT = route<Params>("mutation", async (request, { id }) =>
+  updateEquipment(
+    await getDb(),
+    parseId(id),
+    await parseJson(request, equipmentInputSchema),
+  ),
+);
+
+export const DELETE = route<Params>("mutation", async (_request, { id }) =>
+  deleteEquipment(await getDb(), parseId(id)),
+);

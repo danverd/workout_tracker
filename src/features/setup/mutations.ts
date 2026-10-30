@@ -21,18 +21,8 @@ import type {
   MovementInput,
   SettingsInput,
 } from "@/lib/validation/setup";
+import { HttpError } from "@/lib/http";
 import type { SettingsDto } from "@/types/domain";
-
-export type Result<T> =
-  | { ok: true; value: T }
-  | { ok: false; status: 400 | 404 | 409; error: string };
-
-const ok = <T>(value: T): Result<T> => ({ ok: true, value });
-const fail = (status: 400 | 404 | 409, error: string): Result<never> => ({
-  ok: false,
-  status,
-  error,
-});
 
 function pgCode(error: unknown): string | undefined {
   let current: unknown = error;
@@ -44,12 +34,13 @@ function pgCode(error: unknown): string | undefined {
   return undefined;
 }
 
-/** Maps unique (23505) and foreign-key (23503) violations to friendly results. */
-function constraintFailure(error: unknown, noun: string): Result<never> {
+/** Maps unique (23505) and foreign-key (23503) violations to friendly HttpErrors. */
+function constraintFailure(error: unknown, noun: string): never {
   const code = pgCode(error);
-  if (code === "23505") return fail(409, `A ${noun} with that name exists.`);
+  if (code === "23505")
+    throw new HttpError(409, `A ${noun} with that name exists.`);
   if (code === "23503")
-    return fail(400, "Something you picked no longer exists.");
+    throw new HttpError(400, "Something you picked no longer exists.");
   throw error;
 }
 
@@ -79,7 +70,7 @@ async function nameTaken(
 export async function createEquipment(
   db: Database,
   input: EquipmentInput,
-): Promise<Result<EquipmentRow>> {
+): Promise<EquipmentRow> {
   if (
     await nameTaken(
       db,
@@ -89,10 +80,10 @@ export async function createEquipment(
       input.name,
     )
   )
-    return fail(409, `You already have equipment named ${input.name}.`);
+    throw new HttpError(409, `You already have equipment named ${input.name}.`);
   try {
     const [row] = await db.insert(s.equipment).values(input).returning();
-    return ok((await listEquipment(db, row.id))[0]);
+    return (await listEquipment(db, row.id))[0];
   } catch (error) {
     return constraintFailure(error, "equipment");
   }
@@ -102,7 +93,7 @@ export async function updateEquipment(
   db: Database,
   id: string,
   input: EquipmentInput,
-): Promise<Result<EquipmentRow>> {
+): Promise<EquipmentRow> {
   if (
     await nameTaken(
       db,
@@ -113,15 +104,15 @@ export async function updateEquipment(
       id,
     )
   )
-    return fail(409, `You already have equipment named ${input.name}.`);
+    throw new HttpError(409, `You already have equipment named ${input.name}.`);
   try {
     const rows = await db
       .update(s.equipment)
       .set(input)
       .where(eq(s.equipment.id, id))
       .returning({ id: s.equipment.id });
-    if (rows.length === 0) return fail(404, "Equipment not found.");
-    return ok((await listEquipment(db, id))[0]);
+    if (rows.length === 0) throw new HttpError(404, "Equipment not found.");
+    return (await listEquipment(db, id))[0];
   } catch (error) {
     return constraintFailure(error, "equipment");
   }
@@ -130,16 +121,16 @@ export async function updateEquipment(
 export async function deleteEquipment(
   db: Database,
   id: string,
-): Promise<Result<{ id: string }>> {
+): Promise<{ id: string }> {
   const row = (await listEquipment(db, id))[0];
-  if (!row) return fail(404, "Equipment not found.");
+  if (!row) throw new HttpError(404, "Equipment not found.");
   if (row.usage)
-    return fail(
+    throw new HttpError(
       409,
       `${row.name} is used by ${row.usage}. Remove it there first.`,
     );
   await db.delete(s.equipment).where(eq(s.equipment.id, id));
-  return ok({ id });
+  return { id };
 }
 
 // ---- Movements --------------------------------------------------------------
@@ -147,7 +138,7 @@ export async function deleteEquipment(
 export async function createMovement(
   db: Database,
   input: MovementInput,
-): Promise<Result<MovementRow>> {
+): Promise<MovementRow> {
   if (
     await nameTaken(
       db,
@@ -157,10 +148,13 @@ export async function createMovement(
       input.name,
     )
   )
-    return fail(409, `You already have a movement named ${input.name}.`);
+    throw new HttpError(
+      409,
+      `You already have a movement named ${input.name}.`,
+    );
   try {
     const [row] = await db.insert(s.movements).values(input).returning();
-    return ok((await listMovements(db, row.id))[0]);
+    return (await listMovements(db, row.id))[0];
   } catch (error) {
     return constraintFailure(error, "movement");
   }
@@ -170,7 +164,7 @@ export async function updateMovement(
   db: Database,
   id: string,
   input: MovementInput,
-): Promise<Result<MovementRow>> {
+): Promise<MovementRow> {
   if (
     await nameTaken(
       db,
@@ -181,15 +175,18 @@ export async function updateMovement(
       id,
     )
   )
-    return fail(409, `You already have a movement named ${input.name}.`);
+    throw new HttpError(
+      409,
+      `You already have a movement named ${input.name}.`,
+    );
   try {
     const rows = await db
       .update(s.movements)
       .set(input)
       .where(eq(s.movements.id, id))
       .returning({ id: s.movements.id });
-    if (rows.length === 0) return fail(404, "Movement not found.");
-    return ok((await listMovements(db, id))[0]);
+    if (rows.length === 0) throw new HttpError(404, "Movement not found.");
+    return (await listMovements(db, id))[0];
   } catch (error) {
     return constraintFailure(error, "movement");
   }
@@ -198,16 +195,16 @@ export async function updateMovement(
 export async function deleteMovement(
   db: Database,
   id: string,
-): Promise<Result<{ id: string }>> {
+): Promise<{ id: string }> {
   const row = (await listMovements(db, id))[0];
-  if (!row) return fail(404, "Movement not found.");
+  if (!row) throw new HttpError(404, "Movement not found.");
   if (row.usage)
-    return fail(
+    throw new HttpError(
       409,
       `${row.name} is used by ${row.usage}. Move them to another movement first.`,
     );
   await db.delete(s.movements).where(eq(s.movements.id, id));
-  return ok({ id });
+  return { id };
 }
 
 // ---- Locations --------------------------------------------------------------
@@ -243,7 +240,7 @@ async function locationEquipmentRows(
 export async function createLocation(
   db: Database,
   input: LocationInput,
-): Promise<Result<LocationRow>> {
+): Promise<LocationRow> {
   if (
     await nameTaken(
       db,
@@ -253,9 +250,13 @@ export async function createLocation(
       input.name,
     )
   )
-    return fail(409, `You already have a location named ${input.name}.`);
+    throw new HttpError(
+      409,
+      `You already have a location named ${input.name}.`,
+    );
   const links = await locationEquipmentRows(db, input);
-  if (!links) return fail(400, "Something you picked no longer exists.");
+  if (!links)
+    throw new HttpError(400, "Something you picked no longer exists.");
   try {
     const id = await db.transaction(async (tx) => {
       const [row] = await tx
@@ -268,7 +269,7 @@ export async function createLocation(
           .values(links.map((link) => ({ ...link, locationId: row.id })));
       return row.id;
     });
-    return ok((await getLocation(db, id))!);
+    return (await getLocation(db, id))!;
   } catch (error) {
     return constraintFailure(error, "location");
   }
@@ -278,7 +279,7 @@ export async function updateLocation(
   db: Database,
   id: string,
   input: LocationInput,
-): Promise<Result<LocationRow>> {
+): Promise<LocationRow> {
   if (
     await nameTaken(
       db,
@@ -289,9 +290,13 @@ export async function updateLocation(
       id,
     )
   )
-    return fail(409, `You already have a location named ${input.name}.`);
+    throw new HttpError(
+      409,
+      `You already have a location named ${input.name}.`,
+    );
   const links = await locationEquipmentRows(db, input);
-  if (!links) return fail(400, "Something you picked no longer exists.");
+  if (!links)
+    throw new HttpError(400, "Something you picked no longer exists.");
   try {
     const found = await db.transaction(async (tx) => {
       const rows = await tx
@@ -309,8 +314,8 @@ export async function updateLocation(
           .values(links.map((link) => ({ ...link, locationId: id })));
       return true;
     });
-    if (!found) return fail(404, "Location not found.");
-    return ok((await getLocation(db, id))!);
+    if (!found) throw new HttpError(404, "Location not found.");
+    return (await getLocation(db, id))!;
   } catch (error) {
     return constraintFailure(error, "location");
   }
@@ -320,29 +325,29 @@ export async function setLocationArchived(
   db: Database,
   id: string,
   archived: boolean,
-): Promise<Result<LocationRow>> {
+): Promise<LocationRow> {
   const rows = await db
     .update(s.locations)
     .set({ archivedAt: archived ? new Date() : null })
     .where(eq(s.locations.id, id))
     .returning({ id: s.locations.id });
-  if (rows.length === 0) return fail(404, "Location not found.");
-  return ok((await getLocation(db, id))!);
+  if (rows.length === 0) throw new HttpError(404, "Location not found.");
+  return (await getLocation(db, id))!;
 }
 
 export async function deleteLocation(
   db: Database,
   id: string,
-): Promise<Result<{ id: string }>> {
+): Promise<{ id: string }> {
   const row = await getLocation(db, id);
-  if (!row) return fail(404, "Location not found.");
+  if (!row) throw new HttpError(404, "Location not found.");
   if (row.sessionCount > 0)
-    return fail(
+    throw new HttpError(
       409,
       `${row.name} has logged workouts, so it can't be deleted. Archive it instead.`,
     );
   await db.delete(s.locations).where(eq(s.locations.id, id));
-  return ok({ id });
+  return { id };
 }
 
 // ---- Exercises --------------------------------------------------------------
@@ -368,7 +373,7 @@ async function validateExerciseRefs(db: Database, input: ExerciseInput) {
 export async function createExercise(
   db: Database,
   input: ExerciseInput,
-): Promise<Result<ExerciseRow>> {
+): Promise<ExerciseRow> {
   if (
     await nameTaken(
       db,
@@ -378,9 +383,12 @@ export async function createExercise(
       input.name,
     )
   )
-    return fail(409, `You already have an exercise named ${input.name}.`);
+    throw new HttpError(
+      409,
+      `You already have an exercise named ${input.name}.`,
+    );
   if (!(await validateExerciseRefs(db, input)))
-    return fail(400, "Something you picked no longer exists.");
+    throw new HttpError(400, "Something you picked no longer exists.");
   try {
     const { equipmentIds, ...fields } = input;
     const id = await db.transaction(async (tx) => {
@@ -397,7 +405,7 @@ export async function createExercise(
         );
       return row.id;
     });
-    return ok((await getExercise(db, id))!);
+    return (await getExercise(db, id))!;
   } catch (error) {
     return constraintFailure(error, "exercise");
   }
@@ -407,7 +415,7 @@ export async function updateExercise(
   db: Database,
   id: string,
   input: ExerciseInput,
-): Promise<Result<ExerciseRow>> {
+): Promise<ExerciseRow> {
   if (
     await nameTaken(
       db,
@@ -418,9 +426,12 @@ export async function updateExercise(
       id,
     )
   )
-    return fail(409, `You already have an exercise named ${input.name}.`);
+    throw new HttpError(
+      409,
+      `You already have an exercise named ${input.name}.`,
+    );
   if (!(await validateExerciseRefs(db, input)))
-    return fail(400, "Something you picked no longer exists.");
+    throw new HttpError(400, "Something you picked no longer exists.");
   try {
     const { equipmentIds, ...fields } = input;
     const found = await db.transaction(async (tx) => {
@@ -442,8 +453,8 @@ export async function updateExercise(
         );
       return true;
     });
-    if (!found) return fail(404, "Exercise not found.");
-    return ok((await getExercise(db, id))!);
+    if (!found) throw new HttpError(404, "Exercise not found.");
+    return (await getExercise(db, id))!;
   } catch (error) {
     return constraintFailure(error, "exercise");
   }
@@ -453,29 +464,29 @@ export async function setExerciseArchived(
   db: Database,
   id: string,
   archived: boolean,
-): Promise<Result<ExerciseRow>> {
+): Promise<ExerciseRow> {
   const rows = await db
     .update(s.exercises)
     .set({ archivedAt: archived ? new Date() : null })
     .where(eq(s.exercises.id, id))
     .returning({ id: s.exercises.id });
-  if (rows.length === 0) return fail(404, "Exercise not found.");
-  return ok((await getExercise(db, id))!);
+  if (rows.length === 0) throw new HttpError(404, "Exercise not found.");
+  return (await getExercise(db, id))!;
 }
 
 export async function deleteExercise(
   db: Database,
   id: string,
-): Promise<Result<{ id: string }>> {
+): Promise<{ id: string }> {
   const row = await getExercise(db, id);
-  if (!row) return fail(404, "Exercise not found.");
+  if (!row) throw new HttpError(404, "Exercise not found.");
   if (row.usage)
-    return fail(
+    throw new HttpError(
       409,
       `${row.name} is used in ${row.usage}, so it can't be deleted. Archive it instead.`,
     );
   await db.delete(s.exercises).where(eq(s.exercises.id, id));
-  return ok({ id });
+  return { id };
 }
 
 // ---- Settings ---------------------------------------------------------------
@@ -483,7 +494,7 @@ export async function deleteExercise(
 export async function updateSettings(
   db: Database,
   input: SettingsInput,
-): Promise<Result<SettingsDto>> {
+): Promise<SettingsDto> {
   try {
     await db
       .insert(s.settings)
@@ -492,5 +503,5 @@ export async function updateSettings(
   } catch (error) {
     return constraintFailure(error, "setting");
   }
-  return ok(await getSettings(db));
+  return await getSettings(db);
 }

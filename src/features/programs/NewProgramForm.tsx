@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { ApiError, apiPost } from "@/lib/api";
+import { apiPost } from "@/lib/api";
+import { useAsyncAction } from "@/lib/use-async-action";
 import type { ProgramDto } from "@/types/domain";
 import { Button } from "@/ui/Button";
 import { TextField } from "@/ui/TextField";
@@ -11,25 +12,19 @@ import { TextField } from "@/ui/TextField";
 export function NewProgramForm() {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>();
+  const { busy, error, run } = useAsyncAction("Could not create it.");
 
-  async function create() {
-    setBusy(true);
-    setError(undefined);
-    try {
-      const program = await apiPost<ProgramDto>("/api/programs", {
-        name,
-        days: [],
-      });
-      router.replace(`/programs/${program.id}`);
-    } catch (caught) {
-      setError(
-        caught instanceof ApiError ? caught.message : "Could not create it.",
-      );
-      setBusy(false);
-    }
-  }
+  const create = () =>
+    run(
+      async () => {
+        const program = await apiPost<ProgramDto>("/api/programs", {
+          name,
+          days: [],
+        });
+        router.replace(`/programs/${program.id}`);
+      },
+      { keepBusy: true },
+    );
 
   return (
     <form
@@ -46,7 +41,7 @@ export function NewProgramForm() {
         autoFocus
         placeholder="Push, pull, legs"
         hint="You will add days and slots next."
-        error={error}
+        error={error ?? undefined}
         onChange={(e) => setName(e.target.value)}
       />
       <Button

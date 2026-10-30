@@ -1,20 +1,13 @@
-import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
 import { finishSession } from "@/db/queries/sessions";
-import {
-  guarded,
-  parseId,
-  readJson,
-  type IdParams,
-} from "@/features/session/route";
+import { parseId, parseJson, route } from "@/lib/http";
 import { sessionFinishSchema } from "@/lib/validation/sessions";
 
-export function POST(request: Request, { params }: IdParams) {
-  return guarded("mutation", async () => {
-    const id = parseId((await params).id);
-    const { finishedAt } = sessionFinishSchema.parse(await readJson(request));
-    return NextResponse.json(
-      await finishSession(await getDb(), id, finishedAt),
-    );
-  });
-}
+export const POST = route<{ id: string }>(
+  "mutation",
+  async (request, { id }) => {
+    const sessionId = parseId(id);
+    const { finishedAt } = await parseJson(request, sessionFinishSchema);
+    return finishSession(await getDb(), sessionId, finishedAt);
+  },
+);

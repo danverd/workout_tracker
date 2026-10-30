@@ -21,7 +21,8 @@ import {
   type PickerMovement,
 } from "@/features/programs/SlotEditor";
 import { useAutosave } from "@/features/programs/use-autosave";
-import { ApiError, apiPatch, apiPost, apiPut } from "@/lib/api";
+import { apiPatch, apiPost, apiPut } from "@/lib/api";
+import { useAsyncAction } from "@/lib/use-async-action";
 import type { ProgramDto } from "@/types/domain";
 import { AppShell } from "@/ui/AppShell";
 import { BottomSheet } from "@/ui/BottomSheet";
@@ -77,7 +78,7 @@ export function ProgramBuilder({
   const [archived, setArchived] = useState(program.archived);
   const [sheet, setSheet] = useState<SheetState>(null);
   const [dayToDelete, setDayToDelete] = useState<DraftDay | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const { error: actionError, run: runAction } = useAsyncAction();
 
   const problem = draftProblem(draft);
   const hasPickables = movements.length > 0 || exercises.length > 0;
@@ -133,17 +134,6 @@ export function ProgramBuilder({
       slots: day.slots.filter((x) => x.id !== slot.id),
     }));
     setSheet(null);
-  }
-
-  async function runAction(action: () => Promise<void>) {
-    setActionError(null);
-    try {
-      await action();
-    } catch (caught) {
-      setActionError(
-        caught instanceof ApiError ? caught.message : "Something went wrong.",
-      );
-    }
   }
 
   const makeActive = () =>

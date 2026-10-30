@@ -1,11 +1,11 @@
+import { getDb } from "@/db/client";
 import { getSettings } from "@/db/queries/setup";
 import { updateSettings } from "@/features/setup/mutations";
-import { handleRead, handleWrite } from "@/features/setup/route";
+import { parseJson, route } from "@/lib/http";
 import { settingsInputSchema } from "@/lib/validation/setup";
 
-export const GET = () => handleRead((db) => getSettings(db));
+export const GET = route("read", async () => getSettings(await getDb()));
 
-export const PUT = (request: Request) =>
-  handleWrite(request, settingsInputSchema, (db, input) =>
-    updateSettings(db, input),
-  );
+export const PUT = route("mutation", async (request) =>
+  updateSettings(await getDb(), await parseJson(request, settingsInputSchema)),
+);

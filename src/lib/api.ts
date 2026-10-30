@@ -16,6 +16,14 @@ export class ApiError extends Error {
   }
 }
 
+/** User-facing text for a failed request; non-API errors get the fallback. */
+export function errorMessage(
+  error: unknown,
+  fallback = "Something went wrong. Try again.",
+): string {
+  return error instanceof ApiError ? error.message : fallback;
+}
+
 function messageFrom(body: unknown, fallback: string) {
   if (body && typeof body === "object" && "error" in body) {
     const error = (body as { error: unknown }).error;
