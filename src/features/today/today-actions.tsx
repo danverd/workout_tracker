@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { sessionTitle } from "@/features/history/format";
+import { sessionTitle } from "@/lib/format";
 import type { SessionSummaryDto } from "@/types/domain";
 import { buttonClass } from "@/ui/button-styles";
 
 /** The in-progress strength session to continue, newest first. */
-export function findInProgress(sessions: SessionSummaryDto[]) {
+function findInProgress(sessions: SessionSummaryDto[]) {
   return [...sessions]
     .reverse()
     .find((session) => session.kind === "strength" && !session.finishedAt);

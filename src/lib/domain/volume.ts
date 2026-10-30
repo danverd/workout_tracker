@@ -1,3 +1,4 @@
+import { round2 } from "@/lib/format";
 import type { LoadType } from "@/types/domain";
 
 export interface LoadInput {
@@ -8,8 +9,6 @@ export interface LoadInput {
   baseWeight: number;
   bodyweightLb: number;
 }
-
-const round = (value: number) => Math.round(value * 100) / 100;
 
 /** Weight actually moved for one rep, derived from the entered weight. */
 export function effectiveWeight({
@@ -40,5 +39,5 @@ export interface SetVolumeInput extends LoadInput {
 /** Volume of one set. Only done sets with reps count. */
 export function setVolume(input: SetVolumeInput): number {
   if (!input.done || !input.reps || input.reps < 0) return 0;
-  return round(effectiveWeight(input) * input.reps);
+  return round2(effectiveWeight(input) * input.reps);
 }

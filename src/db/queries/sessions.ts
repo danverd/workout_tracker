@@ -26,14 +26,12 @@ import type {
 import type {
   CardioEntryDto,
   DistanceUnit,
-  ExerciseDto,
   LastSetDto,
   LoadType,
-  LocationDto,
-  MovementDto,
   ProgramDto,
   SessionDto,
   SessionExerciseDto,
+  SessionCatalog,
   SessionHeaderDto,
   SessionSetDto,
   SettingsDto,
@@ -604,22 +602,6 @@ export async function deleteSet(
 }
 
 // ---- Start / logger data ----------------------------------------------------
-
-export interface SessionCatalog {
-  locations: LocationDto[];
-  exercises: ExerciseDto[];
-  movements: MovementDto[];
-  programs: ProgramDto[];
-  settings: SettingsDto;
-  /** Next day id per program (design §13.2); null when it has no days. */
-  nextDayByProgram: Record<string, string | null>;
-  /** ISO time an exercise was last done anywhere. */
-  lastUsedAnywhere: Record<string, string>;
-  /** locationId -> exerciseId -> ISO time of last done set there. */
-  lastUsedByLocation: Record<string, Record<string, string>>;
-  /** Done sets from the most recent earlier session, per exercise. */
-  lastSets: Record<string, LastSetDto[]>;
-}
 
 /**
  * Everything the preview and the logger need, loaded in one go so location

@@ -10,8 +10,7 @@ export const LOAD_TYPES = [
 ] as const;
 export type LoadType = (typeof LOAD_TYPES)[number];
 
-export const SESSION_KINDS = ["strength", "cardio"] as const;
-export type SessionKind = (typeof SESSION_KINDS)[number];
+export type SessionKind = "strength" | "cardio";
 
 export const DISTANCE_UNITS = ["mi", "km"] as const;
 export type DistanceUnit = (typeof DISTANCE_UNITS)[number];
@@ -221,4 +220,37 @@ export interface SetSuggestion {
   weight: number | null;
   /** Reps from the matching set last time, used to default reps on done. */
   lastReps: number | null;
+}
+
+// ---- Query result shapes shared with the UI --------------------------------
+
+export interface EquipmentRow extends EquipmentDto {
+  /** Phrase naming what uses it ("2 locations"), or null when unused. */
+  usage: string | null;
+}
+export interface MovementRow extends MovementDto {
+  usage: string | null;
+}
+export interface LocationRow extends LocationDto {
+  /** Logged sessions at this location; deletion is only allowed at zero. */
+  sessionCount: number;
+}
+export interface ExerciseRow extends ExerciseDto {
+  usage: string | null;
+}
+
+export interface SessionCatalog {
+  locations: LocationDto[];
+  exercises: ExerciseDto[];
+  movements: MovementDto[];
+  programs: ProgramDto[];
+  settings: SettingsDto;
+  /** Next day id per program (design §13.2); null when it has no days. */
+  nextDayByProgram: Record<string, string | null>;
+  /** ISO time an exercise was last done anywhere. */
+  lastUsedAnywhere: Record<string, string>;
+  /** locationId -> exerciseId -> ISO time of last done set there. */
+  lastUsedByLocation: Record<string, Record<string, string>>;
+  /** Done sets from the most recent earlier session, per exercise. */
+  lastSets: Record<string, LastSetDto[]>;
 }

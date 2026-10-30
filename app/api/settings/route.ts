@@ -1,6 +1,6 @@
 import { getDb } from "@/db/client";
 import { getSettings } from "@/db/queries/setup";
-import { updateSettings } from "@/features/setup/mutations";
+import { updateSettings } from "@/db/mutations/setup";
 import { parseJson, route } from "@/lib/http";
 import { settingsInputSchema } from "@/lib/validation/setup";
 

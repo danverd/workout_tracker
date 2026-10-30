@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { getDb } from "@/db/client";
 import { getTodayData } from "@/db/queries/history";
 import { SessionRow } from "@/features/history/session-row";
-import { formatDay } from "@/features/history/format";
+import { formatDay } from "@/lib/format";
 import { TodayActions } from "@/features/today/today-actions";
 import { todayInAppTimeZone } from "@/lib/dates";
 import { buttonClass } from "@/ui/button-styles";

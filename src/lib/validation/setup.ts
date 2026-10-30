@@ -6,7 +6,7 @@ export const nameSchema = z.string().trim().min(1).max(80);
 /** A weight in pounds as entered by the owner. */
 export const weightSchema = z.number().finite().min(0).max(2000);
 
-export const loadTypeSchema = z.enum(LOAD_TYPES);
+const loadTypeSchema = z.enum(LOAD_TYPES);
 export const distanceUnitSchema = z.enum(DISTANCE_UNITS);
 
 /** POST /api/equipment, PUT /api/equipment/[id] */

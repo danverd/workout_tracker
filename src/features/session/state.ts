@@ -99,6 +99,9 @@ export function applyMutation(
       return { ...session, finishedAt: mutation.finishedAt };
     case "reopen":
       return { ...session, finishedAt: null };
+    case "putCardio":
+      // Cardio is saved from its own form; there is no logger state to update.
+      return session;
   }
 }
 

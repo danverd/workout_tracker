@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { apiPut } from "@/lib/api";
+import { getBrowserQueue } from "@/lib/save-queue/browser";
 import { useAsyncAction } from "@/lib/use-async-action";
 import type { CardioInput } from "@/lib/validation/sessions";
 import type { DistanceUnit } from "@/types/domain";
@@ -22,13 +22,7 @@ export function CardioForm({ recent }: { recent: string[] }) {
   const [distance, setDistance] = useState<number | null>(null);
   const [unit, setUnit] = useState<DistanceUnit>("mi");
   const [notes, setNotes] = useState("");
-  const {
-    busy: saving,
-    error,
-    run,
-  } = useAsyncAction(
-    "Not saved. Check your connection and tap Save cardio again.",
-  );
+  const { busy: saving, error, run, setError } = useAsyncAction();
 
   const chips = recent.length > 0 ? recent : DEFAULT_ACTIVITIES;
   const canSave = activity.trim().length > 0 && !saving;
@@ -43,10 +37,20 @@ export function CardioForm({ recent }: { recent: string[] }) {
       distanceUnit: distance === null ? null : unit,
       notes: notes.trim(),
     };
-    if (
-      !(await run(() => apiPut(`/api/cardio/${id}`, body), { keepBusy: true }))
-    )
+    // The queue persists the save and retries it, so it survives a bad
+    // connection or a closed tab. Wait for the first attempt: online, the Today
+    // page then already shows the entry; offline, it saves later.
+    const queue = getBrowserQueue();
+    const sent = await run(async () => {
+      queue.enqueue({ type: "putCardio", sessionId: id, cardio: body });
+      await queue.idle();
+    });
+    if (!sent) return;
+    const { rejected } = queue.getSnapshot();
+    if (rejected) {
+      setError(rejected);
       return;
+    }
     router.push("/");
     router.refresh();
   }

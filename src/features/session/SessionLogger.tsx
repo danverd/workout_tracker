@@ -9,7 +9,7 @@ import { AppShell } from "@/ui/AppShell";
 import { Button } from "@/ui/Button";
 import { SaveStatus } from "@/ui/SaveStatus";
 import { ScreenHeader } from "@/ui/ScreenHeader";
-import { formatDay } from "@/features/history/format";
+import { formatDay, plural } from "@/lib/format";
 import type { SetTarget } from "@/types/domain";
 import { findLocation, type Catalog } from "./catalog";
 import { ExerciseCard } from "./ExerciseCard";
@@ -149,9 +149,8 @@ function LoggerBody({
               Session finished
             </p>
             <p className="text-body text-rubber">
-              {doneSets} {doneSets === 1 ? "set" : "sets"} done across{" "}
-              {session.exercises.length}{" "}
-              {session.exercises.length === 1 ? "exercise" : "exercises"}.
+              {plural(doneSets, "set")} done across{" "}
+              {plural(session.exercises.length, "exercise")}.
             </p>
           </div>
           <Link href="/" className={buttonClass("primary")}>
@@ -160,6 +159,7 @@ function LoggerBody({
         </section>
       ) : null}
 
+      {/* A finished session is read-only until it is reopened. */}
       <div inert={finished}>
         {session.exercises.length === 0 ? (
           <p className="text-body text-rubber py-4">

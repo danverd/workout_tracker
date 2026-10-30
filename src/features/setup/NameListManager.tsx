@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 
-import { ConfirmButton } from "@/features/setup/ConfirmButton";
+import { ConfirmButton } from "@/ui/ConfirmButton";
 import { apiDelete, apiPost, apiPut, errorMessage } from "@/lib/api";
 import { useAsyncAction } from "@/lib/use-async-action";
 import { BottomSheet } from "@/ui/BottomSheet";
@@ -103,16 +103,16 @@ export function NameListManager({
   return (
     <div className="flex flex-col gap-4">
       <form onSubmit={add} className="flex items-stretch gap-2">
-        <input
+        <TextField
           ref={inputRef}
+          label={text.addLabel}
+          hideLabel
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          aria-label={text.addLabel}
           placeholder={text.placeholder}
           autoComplete="off"
           autoCapitalize="sentences"
           enterKeyHint="done"
-          className="rounded-field border-rubber bg-paper text-lead text-steel placeholder:text-rubber min-h-12 min-w-0 flex-1 border px-3"
         />
         <Button type="submit" variant="primary" disabled={!draft.trim()}>
           <PlusIcon size={20} />
@@ -211,13 +211,9 @@ function EditForm({
   }
 
   async function remove() {
-    await run(
-      async () => {
-        await apiDelete(url);
-        onDeleted(row.id);
-      },
-      { keepBusy: true },
-    );
+    // ConfirmButton shows a failure under the button.
+    await apiDelete(url);
+    onDeleted(row.id);
   }
 
   return (
@@ -242,12 +238,7 @@ function EditForm({
           Used by {row.usage}, so it can&apos;t be deleted yet.
         </p>
       ) : (
-        <ConfirmButton
-          label="Delete"
-          confirmLabel="Tap again to delete"
-          disabled={busy}
-          onConfirm={remove}
-        />
+        <ConfirmButton label="Delete" disabled={busy} onConfirm={remove} />
       )}
     </form>
   );

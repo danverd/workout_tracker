@@ -1,6 +1,6 @@
 import { getDb } from "@/db/client";
 import { listEquipment } from "@/db/queries/setup";
-import { createEquipment } from "@/features/setup/mutations";
+import { createEquipment } from "@/db/mutations/setup";
 import { created, parseJson, route } from "@/lib/http";
 import { equipmentInputSchema } from "@/lib/validation/setup";
 

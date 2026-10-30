@@ -1,8 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
-import { ApiError } from "@/lib/api";
+import { errorMessage } from "@/lib/api";
+import { flushOnHide, isRetryable } from "@/lib/save-queue/retry";
 import type { SaveState } from "@/ui/SaveStatus";
 
 const RETRY_MS = 4000;
@@ -34,46 +41,40 @@ export function useAutosave<T>({
   const dirty = useRef(false);
   const inflight = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // `flush` runs from timers and event handlers, so it reads the newest
+  // props through refs. `useEffectEvent` is the React 19.2 tool for this, but
+  // its lint rule forbids calling it outside effects. The refs are updated in
+  // a layout effect (not during render) so concurrent renders can't leak
+  // props that never committed.
   const saveRef = useRef(save);
   const problemRef = useRef(problem);
-
-  const flushRef = useRef<() => Promise<void>>(async () => {});
-
-  useEffect(() => {
+  useLayoutEffect(() => {
     saveRef.current = save;
     problemRef.current = problem;
-    flushRef.current = async function run() {
-      clearTimeout(timer.current);
-      if (inflight.current || !dirty.current) return;
-      if (problemRef.current(latest.current)) return;
-      inflight.current = true;
-      dirty.current = false;
-      setStatus("saving");
-      try {
-        await saveRef.current(latest.current);
-        setError(null);
-        inflight.current = false;
-        if (dirty.current) void flushRef.current();
-        else setStatus("saved");
-      } catch (caught) {
-        inflight.current = false;
-        dirty.current = true;
-        setStatus("error");
-        const retryable = caught instanceof ApiError ? caught.retryable : true;
-        setError(
-          retryable
-            ? null
-            : caught instanceof Error
-              ? caught.message
-              : "Could not save.",
-        );
-        if (retryable)
-          timer.current = setTimeout(() => void flushRef.current(), RETRY_MS);
-      }
-    };
   });
 
-  const flush = useCallback(() => flushRef.current(), []);
+  const flush = useCallback(async function run(): Promise<void> {
+    clearTimeout(timer.current);
+    if (inflight.current || !dirty.current) return;
+    if (problemRef.current(latest.current)) return;
+    inflight.current = true;
+    dirty.current = false;
+    setStatus("saving");
+    try {
+      await saveRef.current(latest.current);
+      setError(null);
+      inflight.current = false;
+      if (dirty.current) void run();
+      else setStatus("saved");
+    } catch (caught) {
+      inflight.current = false;
+      dirty.current = true;
+      setStatus("error");
+      const retryable = isRetryable(caught);
+      setError(retryable ? null : errorMessage(caught, "Could not save."));
+      if (retryable) timer.current = setTimeout(() => void run(), RETRY_MS);
+    }
+  }, []);
 
   const update = useCallback(
     (change: (current: T) => T) => {
@@ -90,15 +91,12 @@ export function useAutosave<T>({
 
   // Send pending edits when leaving the screen or hiding the page.
   useEffect(() => {
-    const onHide = () => {
-      if (document.visibilityState === "hidden") void flush();
-    };
-    document.addEventListener("visibilitychange", onHide);
+    const stop = flushOnHide(() => void flush());
     return () => {
-      document.removeEventListener("visibilitychange", onHide);
+      stop();
       void flush();
     };
   }, [flush]);
 
-  return { value, update, status, error };
+  return { value, update, status, error, problem: problem(value) };
 }

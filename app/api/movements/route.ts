@@ -1,6 +1,6 @@
 import { getDb } from "@/db/client";
 import { listMovements } from "@/db/queries/setup";
-import { createMovement } from "@/features/setup/mutations";
+import { createMovement } from "@/db/mutations/setup";
 import { created, parseJson, route } from "@/lib/http";
 import { movementInputSchema } from "@/lib/validation/setup";
 

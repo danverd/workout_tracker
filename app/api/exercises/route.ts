@@ -1,6 +1,6 @@
 import { getDb } from "@/db/client";
 import { listExercises } from "@/db/queries/setup";
-import { createExercise } from "@/features/setup/mutations";
+import { createExercise } from "@/db/mutations/setup";
 import { created, parseJson, route } from "@/lib/http";
 import { exerciseInputSchema } from "@/lib/validation/setup";
 

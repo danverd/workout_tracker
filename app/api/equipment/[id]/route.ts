@@ -1,5 +1,5 @@
 import { getDb } from "@/db/client";
-import { deleteEquipment, updateEquipment } from "@/features/setup/mutations";
+import { deleteEquipment, updateEquipment } from "@/db/mutations/setup";
 import { parseId, parseJson, route } from "@/lib/http";
 import { equipmentInputSchema } from "@/lib/validation/setup";
 

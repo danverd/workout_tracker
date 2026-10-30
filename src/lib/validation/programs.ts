@@ -3,6 +3,9 @@ import { idSchema, nameSchema } from "@/lib/validation/setup";
 
 const repsSchema = z.number().int().min(0).max(1000);
 
+/** Most days a program can have. */
+export const MAX_DAYS = 14;
+
 /** One slot: exactly one of movementId / exerciseId. Order = array order. */
 export const programSlotInputSchema = z
   .object({
@@ -42,6 +45,6 @@ export type ProgramDayInput = z.infer<typeof programDayInputSchema>;
  */
 export const programSaveSchema = z.object({
   name: nameSchema,
-  days: z.array(programDayInputSchema).max(14).default([]),
+  days: z.array(programDayInputSchema).max(MAX_DAYS).default([]),
 });
 export type ProgramSaveInput = z.infer<typeof programSaveSchema>;

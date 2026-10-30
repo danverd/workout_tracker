@@ -1,5 +1,5 @@
-import { ApiError } from "@/lib/api";
 import type { SaveState } from "@/ui/SaveStatus";
+import { isRetryable } from "./retry";
 import { MUTATION_TYPES, type Mutation, type QueueSnapshot } from "./types";
 
 /** Bump when the persisted shape changes; old payloads are then ignored. */
@@ -54,6 +54,8 @@ function coalesce(tail: Mutation | undefined, next: Mutation): Mutation | null {
       return tail.type === "patchSession"
         ? { ...next, patch: { ...tail.patch, ...next.patch } }
         : null;
+    case "putCardio":
+      return tail.type === "putCardio" ? next : null;
     case "finish":
     case "reopen":
       return tail.type === "finish" || tail.type === "reopen" ? next : null;
@@ -169,7 +171,7 @@ export function createSaveQueue(options: SaveQueueOptions) {
           await send(head);
         } catch (error) {
           inFlight = null;
-          if (error instanceof ApiError && error.retryable) {
+          if (isRetryable(error)) {
             failures += 1;
             retrying = true;
             emit();

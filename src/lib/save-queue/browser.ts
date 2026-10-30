@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { createSaveQueue, EMPTY_SNAPSHOT, type SaveQueue } from "./queue";
+import { flushOnHide } from "./retry";
 import { sendMutation } from "./send";
 import type { QueueSnapshot } from "./types";
 
@@ -25,10 +26,7 @@ export function getBrowserQueue(): SaveQueue {
       const active = queue;
       window.addEventListener("online", () => active.retryNow());
       // Persist synchronously when the page may be going away.
-      window.addEventListener("pagehide", () => active.flush());
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "hidden") active.flush();
-      });
+      flushOnHide(() => active.flush());
       active.start();
     }
   }

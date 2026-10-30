@@ -3,17 +3,17 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
-import type {
-  EquipmentRow,
-  ExerciseRow,
-  MovementRow,
-} from "@/db/queries/setup";
-import { ConfirmButton } from "@/features/setup/ConfirmButton";
+import { ConfirmButton } from "@/ui/ConfirmButton";
 
 import { LoadTypePicker } from "@/features/setup/LoadTypePicker";
 import { ApiError, apiDelete, apiPatch, apiPost, apiPut } from "@/lib/api";
 import { useAsyncAction } from "@/lib/use-async-action";
-import type { LoadType } from "@/types/domain";
+import type {
+  EquipmentRow,
+  ExerciseRow,
+  LoadType,
+  MovementRow,
+} from "@/types/domain";
 import { Button } from "@/ui/Button";
 import { ChipGroup } from "@/ui/ChipGroup";
 import { NumberField } from "@/ui/NumberField";
@@ -53,7 +53,6 @@ export function ExerciseForm({
     exercise?.increment ?? 5,
   );
   const [newMovement, setNewMovement] = useState("");
-  const { error: movementError, run: runMovement } = useAsyncAction();
   const { busy, error, run } = useAsyncAction();
   const [nameError, setNameError] = useState<string | undefined>();
   const [notice, setNotice] = useState<string | null>(null);
@@ -77,7 +76,7 @@ export function ExerciseForm({
   async function addMovement() {
     const movementName = newMovement.trim();
     if (!movementName) return;
-    await runMovement(async () => {
+    await run(async () => {
       const row = await apiPost<MovementRow>("/api/movements", {
         name: movementName,
       });
@@ -167,7 +166,9 @@ export function ExerciseForm({
           />
         ) : null}
         <div className="flex items-stretch gap-2">
-          <input
+          <TextField
+            label="New movement"
+            hideLabel
             value={newMovement}
             onChange={(event) => setNewMovement(event.target.value)}
             onKeyDown={(event) => {
@@ -176,10 +177,8 @@ export function ExerciseForm({
                 void addMovement();
               }
             }}
-            aria-label="New movement"
             placeholder="New movement, like Hinge"
             autoComplete="off"
-            className="rounded-field border-rubber bg-paper text-lead text-steel placeholder:text-rubber min-h-12 min-w-0 flex-1 border px-3"
           />
           <Button
             disabled={!newMovement.trim()}
@@ -188,11 +187,6 @@ export function ExerciseForm({
             Add
           </Button>
         </div>
-        {movementError ? (
-          <p role="alert" className="text-meta text-bumper font-medium">
-            {movementError}
-          </p>
-        ) : null}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -302,13 +296,12 @@ export function ExerciseForm({
           ) : (
             <ConfirmButton
               label="Delete exercise"
-              confirmLabel="Tap again to delete"
               disabled={busy}
-              onConfirm={() =>
-                void archiveOrDelete(() =>
-                  apiDelete(`/api/exercises/${exercise.id}`),
-                )
-              }
+              onConfirm={async () => {
+                await apiDelete(`/api/exercises/${exercise.id}`);
+                router.push("/setup/exercises");
+                router.refresh();
+              }}
             />
           )}
         </div>

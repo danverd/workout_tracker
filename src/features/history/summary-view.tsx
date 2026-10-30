@@ -7,8 +7,8 @@ import {
   formatMonth,
   formatRange,
   formatVolume,
-  plural,
 } from "@/features/history/format";
+import { plural } from "@/lib/format";
 import { SessionRow } from "@/features/history/session-row";
 import type { SummaryResponseDto } from "@/features/history/types";
 import { Chip } from "@/ui/Chip";

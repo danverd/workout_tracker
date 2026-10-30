@@ -3,7 +3,7 @@ import {
   deleteLocation,
   setLocationArchived,
   updateLocation,
-} from "@/features/setup/mutations";
+} from "@/db/mutations/setup";
 import { parseId, parseJson, route } from "@/lib/http";
 import {
   archiveInputSchema,

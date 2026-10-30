@@ -1,6 +1,4 @@
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
-import type { PgTable } from "drizzle-orm/pg-core";
-import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { eq, inArray } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import {
   getExercise,
@@ -8,11 +6,8 @@ import {
   getSettings,
   listEquipment,
   listMovements,
-  type EquipmentRow,
-  type ExerciseRow,
-  type LocationRow,
-  type MovementRow,
 } from "@/db/queries/setup";
+import { nameTaken, setArchived } from "@/db/mutations/shared";
 import * as s from "@/db/schema";
 import type {
   EquipmentInput,
@@ -22,7 +17,13 @@ import type {
   SettingsInput,
 } from "@/lib/validation/setup";
 import { HttpError } from "@/lib/http";
-import type { SettingsDto } from "@/types/domain";
+import type {
+  EquipmentRow,
+  ExerciseRow,
+  LocationRow,
+  MovementRow,
+  SettingsDto,
+} from "@/types/domain";
 
 function pgCode(error: unknown): string | undefined {
   let current: unknown = error;
@@ -44,168 +45,98 @@ function constraintFailure(error: unknown, noun: string): never {
   throw error;
 }
 
-async function nameTaken(
-  db: Database,
-  table: PgTable,
-  nameColumn: AnyPgColumn,
-  idColumn: AnyPgColumn,
-  name: string,
-  exceptId?: string,
-) {
-  const rows = await db
-    .select({ id: idColumn })
-    .from(table)
-    .where(
-      and(
-        sql`lower(${nameColumn}) = lower(${name})`,
-        exceptId ? ne(idColumn, exceptId) : undefined,
-      ),
-    )
-    .limit(1);
-  return rows.length > 0;
+// ---- Equipment and movements ------------------------------------------------
+
+interface NamedEntityConfig<
+  Row extends { id: string; name: string; usage: string | null },
+> {
+  table: typeof s.equipment | typeof s.movements;
+  list: (db: Database, onlyId?: string) => Promise<Row[]>;
+  /** "equipment" / "movement"; used in error messages. */
+  noun: string;
+  /** "equipment" / "a movement"; completes "You already have ...". */
+  alreadyHave: string;
+  notFound: string;
+  /** What to tell the owner to do before deleting an in-use row. */
+  removeFirst: string;
 }
 
-// ---- Equipment --------------------------------------------------------------
-
-export async function createEquipment(
-  db: Database,
-  input: EquipmentInput,
-): Promise<EquipmentRow> {
-  if (
-    await nameTaken(
-      db,
-      s.equipment,
-      s.equipment.name,
-      s.equipment.id,
-      input.name,
-    )
-  )
-    throw new HttpError(409, `You already have equipment named ${input.name}.`);
-  try {
-    const [row] = await db.insert(s.equipment).values(input).returning();
-    return (await listEquipment(db, row.id))[0];
-  } catch (error) {
-    return constraintFailure(error, "equipment");
-  }
-}
-
-export async function updateEquipment(
-  db: Database,
-  id: string,
-  input: EquipmentInput,
-): Promise<EquipmentRow> {
-  if (
-    await nameTaken(
-      db,
-      s.equipment,
-      s.equipment.name,
-      s.equipment.id,
-      input.name,
-      id,
-    )
-  )
-    throw new HttpError(409, `You already have equipment named ${input.name}.`);
-  try {
-    const rows = await db
-      .update(s.equipment)
-      .set(input)
-      .where(eq(s.equipment.id, id))
-      .returning({ id: s.equipment.id });
-    if (rows.length === 0) throw new HttpError(404, "Equipment not found.");
-    return (await listEquipment(db, id))[0];
-  } catch (error) {
-    return constraintFailure(error, "equipment");
-  }
-}
-
-export async function deleteEquipment(
-  db: Database,
-  id: string,
-): Promise<{ id: string }> {
-  const row = (await listEquipment(db, id))[0];
-  if (!row) throw new HttpError(404, "Equipment not found.");
-  if (row.usage)
-    throw new HttpError(
+/** Create / update / delete for the two name-keyed lists. */
+function namedEntityOps<
+  Input extends { name: string },
+  Row extends { id: string; name: string; usage: string | null },
+>(config: NamedEntityConfig<Row>) {
+  // Both tables share id/name; one typed table stands in for the union.
+  const table = config.table as typeof s.equipment;
+  const taken = (input: Input) =>
+    new HttpError(
       409,
-      `${row.name} is used by ${row.usage}. Remove it there first.`,
+      `You already have ${config.alreadyHave} named ${input.name}.`,
     );
-  await db.delete(s.equipment).where(eq(s.equipment.id, id));
-  return { id };
+  return {
+    async create(db: Database, input: Input): Promise<Row> {
+      if (await nameTaken(db, config.table, input.name)) throw taken(input);
+      try {
+        const [row] = await db
+          .insert(table)
+          .values(input as typeof table.$inferInsert)
+          .returning();
+        return (await config.list(db, row.id))[0];
+      } catch (error) {
+        return constraintFailure(error, config.noun);
+      }
+    },
+    async update(db: Database, id: string, input: Input): Promise<Row> {
+      if (await nameTaken(db, config.table, input.name, id)) throw taken(input);
+      try {
+        const rows = await db
+          .update(table)
+          .set(input as Partial<typeof table.$inferInsert>)
+          .where(eq(table.id, id))
+          .returning({ id: table.id });
+        if (rows.length === 0) throw new HttpError(404, config.notFound);
+        return (await config.list(db, id))[0];
+      } catch (error) {
+        return constraintFailure(error, config.noun);
+      }
+    },
+    async remove(db: Database, id: string): Promise<{ id: string }> {
+      const row = (await config.list(db, id))[0];
+      if (!row) throw new HttpError(404, config.notFound);
+      if (row.usage)
+        throw new HttpError(
+          409,
+          `${row.name} is used by ${row.usage}. ${config.removeFirst}`,
+        );
+      await db.delete(table).where(eq(table.id, id));
+      return { id };
+    },
+  };
 }
 
-// ---- Movements --------------------------------------------------------------
+const equipmentOps = namedEntityOps<EquipmentInput, EquipmentRow>({
+  table: s.equipment,
+  list: listEquipment,
+  noun: "equipment",
+  alreadyHave: "equipment",
+  notFound: "Equipment not found.",
+  removeFirst: "Remove it there first.",
+});
+const movementOps = namedEntityOps<MovementInput, MovementRow>({
+  table: s.movements,
+  list: listMovements,
+  noun: "movement",
+  alreadyHave: "a movement",
+  notFound: "Movement not found.",
+  removeFirst: "Move them to another movement first.",
+});
 
-export async function createMovement(
-  db: Database,
-  input: MovementInput,
-): Promise<MovementRow> {
-  if (
-    await nameTaken(
-      db,
-      s.movements,
-      s.movements.name,
-      s.movements.id,
-      input.name,
-    )
-  )
-    throw new HttpError(
-      409,
-      `You already have a movement named ${input.name}.`,
-    );
-  try {
-    const [row] = await db.insert(s.movements).values(input).returning();
-    return (await listMovements(db, row.id))[0];
-  } catch (error) {
-    return constraintFailure(error, "movement");
-  }
-}
-
-export async function updateMovement(
-  db: Database,
-  id: string,
-  input: MovementInput,
-): Promise<MovementRow> {
-  if (
-    await nameTaken(
-      db,
-      s.movements,
-      s.movements.name,
-      s.movements.id,
-      input.name,
-      id,
-    )
-  )
-    throw new HttpError(
-      409,
-      `You already have a movement named ${input.name}.`,
-    );
-  try {
-    const rows = await db
-      .update(s.movements)
-      .set(input)
-      .where(eq(s.movements.id, id))
-      .returning({ id: s.movements.id });
-    if (rows.length === 0) throw new HttpError(404, "Movement not found.");
-    return (await listMovements(db, id))[0];
-  } catch (error) {
-    return constraintFailure(error, "movement");
-  }
-}
-
-export async function deleteMovement(
-  db: Database,
-  id: string,
-): Promise<{ id: string }> {
-  const row = (await listMovements(db, id))[0];
-  if (!row) throw new HttpError(404, "Movement not found.");
-  if (row.usage)
-    throw new HttpError(
-      409,
-      `${row.name} is used by ${row.usage}. Move them to another movement first.`,
-    );
-  await db.delete(s.movements).where(eq(s.movements.id, id));
-  return { id };
-}
+export const createEquipment = equipmentOps.create;
+export const updateEquipment = equipmentOps.update;
+export const deleteEquipment = equipmentOps.remove;
+export const createMovement = movementOps.create;
+export const updateMovement = movementOps.update;
+export const deleteMovement = movementOps.remove;
 
 // ---- Locations --------------------------------------------------------------
 
@@ -241,15 +172,7 @@ export async function createLocation(
   db: Database,
   input: LocationInput,
 ): Promise<LocationRow> {
-  if (
-    await nameTaken(
-      db,
-      s.locations,
-      s.locations.name,
-      s.locations.id,
-      input.name,
-    )
-  )
+  if (await nameTaken(db, s.locations, input.name))
     throw new HttpError(
       409,
       `You already have a location named ${input.name}.`,
@@ -280,16 +203,7 @@ export async function updateLocation(
   id: string,
   input: LocationInput,
 ): Promise<LocationRow> {
-  if (
-    await nameTaken(
-      db,
-      s.locations,
-      s.locations.name,
-      s.locations.id,
-      input.name,
-      id,
-    )
-  )
+  if (await nameTaken(db, s.locations, input.name, id))
     throw new HttpError(
       409,
       `You already have a location named ${input.name}.`,
@@ -326,12 +240,8 @@ export async function setLocationArchived(
   id: string,
   archived: boolean,
 ): Promise<LocationRow> {
-  const rows = await db
-    .update(s.locations)
-    .set({ archivedAt: archived ? new Date() : null })
-    .where(eq(s.locations.id, id))
-    .returning({ id: s.locations.id });
-  if (rows.length === 0) throw new HttpError(404, "Location not found.");
+  if (!(await setArchived(db, s.locations, id, archived)))
+    throw new HttpError(404, "Location not found.");
   return (await getLocation(db, id))!;
 }
 
@@ -374,15 +284,7 @@ export async function createExercise(
   db: Database,
   input: ExerciseInput,
 ): Promise<ExerciseRow> {
-  if (
-    await nameTaken(
-      db,
-      s.exercises,
-      s.exercises.name,
-      s.exercises.id,
-      input.name,
-    )
-  )
+  if (await nameTaken(db, s.exercises, input.name))
     throw new HttpError(
       409,
       `You already have an exercise named ${input.name}.`,
@@ -416,16 +318,7 @@ export async function updateExercise(
   id: string,
   input: ExerciseInput,
 ): Promise<ExerciseRow> {
-  if (
-    await nameTaken(
-      db,
-      s.exercises,
-      s.exercises.name,
-      s.exercises.id,
-      input.name,
-      id,
-    )
-  )
+  if (await nameTaken(db, s.exercises, input.name, id))
     throw new HttpError(
       409,
       `You already have an exercise named ${input.name}.`,
@@ -465,12 +358,8 @@ export async function setExerciseArchived(
   id: string,
   archived: boolean,
 ): Promise<ExerciseRow> {
-  const rows = await db
-    .update(s.exercises)
-    .set({ archivedAt: archived ? new Date() : null })
-    .where(eq(s.exercises.id, id))
-    .returning({ id: s.exercises.id });
-  if (rows.length === 0) throw new HttpError(404, "Exercise not found.");
+  if (!(await setArchived(db, s.exercises, id, archived)))
+    throw new HttpError(404, "Exercise not found.");
   return (await getExercise(db, id))!;
 }
 

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { startTransition, useMemo, useOptimistic, useState } from "react";
 
 import {
   draftFromProgram,
@@ -23,6 +23,7 @@ import {
 import { useAutosave } from "@/features/programs/use-autosave";
 import { apiPatch, apiPost, apiPut } from "@/lib/api";
 import { useAsyncAction } from "@/lib/use-async-action";
+import { MAX_DAYS } from "@/lib/validation/programs";
 import type { ProgramDto } from "@/types/domain";
 import { AppShell } from "@/ui/AppShell";
 import { BottomSheet } from "@/ui/BottomSheet";
@@ -53,13 +54,39 @@ const blankSlot = (): DraftSlot => ({
   notes: "",
 });
 
-function UpIcon() {
-  return <ChevronDownIcon className="rotate-180" />;
+/** Up and down buttons that reorder one item of a list. */
+function MoveButtons({
+  name,
+  index,
+  count,
+  onMove,
+}: {
+  name: string;
+  index: number;
+  count: number;
+  onMove: (delta: -1 | 1) => void;
+}) {
+  return (
+    <>
+      <IconButton
+        label={`Move ${name} up`}
+        icon={<ChevronDownIcon className="rotate-180" />}
+        disabled={index === 0}
+        onClick={() => onMove(-1)}
+      />
+      <IconButton
+        label={`Move ${name} down`}
+        icon={<ChevronDownIcon />}
+        disabled={index === count - 1}
+        onClick={() => onMove(1)}
+      />
+    </>
+  );
 }
 
 export function ProgramBuilder({
   program,
-  active: initialActive,
+  active: activeFromServer,
   movements,
   exercises,
 }: ProgramBuilderProps) {
@@ -68,19 +95,24 @@ export function ProgramBuilder({
     update,
     status,
     error,
+    problem,
   } = useAutosave<Draft>({
     initial: draftFromProgram(program),
     save: (value) => apiPut(`/api/programs/${program.id}`, toPayload(value)),
     problem: draftProblem,
   });
-  const [active, setActive] = useState(initialActive);
   const router = useRouter();
-  const [archived, setArchived] = useState(program.archived);
+  // Rendered from props (the server is the source of truth); the optimistic
+  // value shows the change at once and settles when `router.refresh()` lands.
+  const [{ active, archived }, setFlags] = useOptimistic(
+    { active: activeFromServer, archived: program.archived },
+    (_current, next: { active: boolean; archived: boolean }) => next,
+  );
   const [sheet, setSheet] = useState<SheetState>(null);
-  const [dayToDelete, setDayToDelete] = useState<DraftDay | null>(null);
+  const [dayToDelete, setDayToDelete] = useState<string | null>(null);
   const { error: actionError, run: runAction } = useAsyncAction();
 
-  const problem = draftProblem(draft);
+  const deletingDay = draft.days.find((day) => day.id === dayToDelete);
   const hasPickables = movements.length > 0 || exercises.length > 0;
   const lookup = useMemo(
     () => ({
@@ -139,8 +171,10 @@ export function ProgramBuilder({
   const makeActive = () =>
     runAction(async () => {
       await apiPost(`/api/programs/${program.id}/active`);
-      setActive(true);
-      router.refresh();
+      startTransition(() => {
+        setFlags({ active: true, archived });
+        router.refresh();
+      });
     });
 
   const toggleArchived = () =>
@@ -148,9 +182,10 @@ export function ProgramBuilder({
       await apiPatch(`/api/programs/${program.id}/archive`, {
         archived: !archived,
       });
-      setArchived(!archived);
-      if (!archived) setActive(false);
-      router.refresh();
+      startTransition(() => {
+        setFlags({ active: archived ? active : false, archived: !archived });
+        router.refresh();
+      });
     });
 
   return (
@@ -255,23 +290,15 @@ export function ProgramBuilder({
                   }}
                 />
               </div>
-              <IconButton
-                label={`Move ${day.name || "day"} up`}
-                icon={<UpIcon />}
-                disabled={dayIndex === 0}
-                onClick={() =>
+              <MoveButtons
+                name={day.name || "day"}
+                index={dayIndex}
+                count={draft.days.length}
+                onMove={(delta) =>
                   update((d) => ({
                     ...d,
-                    days: moveItem(d.days, dayIndex, -1),
+                    days: moveItem(d.days, dayIndex, delta),
                   }))
-                }
-              />
-              <IconButton
-                label={`Move ${day.name || "day"} down`}
-                icon={<ChevronDownIcon />}
-                disabled={dayIndex === draft.days.length - 1}
-                onClick={() =>
-                  update((d) => ({ ...d, days: moveItem(d.days, dayIndex, 1) }))
                 }
               />
             </div>
@@ -298,25 +325,14 @@ export function ProgramBuilder({
                         {copy.detail}
                       </span>
                     </button>
-                    <IconButton
-                      label={`Move ${copy.title} up`}
-                      icon={<UpIcon />}
-                      disabled={slotIndex === 0}
-                      onClick={() =>
+                    <MoveButtons
+                      name={copy.title}
+                      index={slotIndex}
+                      count={day.slots.length}
+                      onMove={(delta) =>
                         updateDay(day.id, (x) => ({
                           ...x,
-                          slots: moveItem(x.slots, slotIndex, -1),
-                        }))
-                      }
-                    />
-                    <IconButton
-                      label={`Move ${copy.title} down`}
-                      icon={<ChevronDownIcon />}
-                      disabled={slotIndex === day.slots.length - 1}
-                      onClick={() =>
-                        updateDay(day.id, (x) => ({
-                          ...x,
-                          slots: moveItem(x.slots, slotIndex, 1),
+                          slots: moveItem(x.slots, slotIndex, delta),
                         }))
                       }
                     />
@@ -335,7 +351,7 @@ export function ProgramBuilder({
               >
                 <PlusIcon size={20} /> Add slot
               </Button>
-              <Button variant="quiet" onClick={() => setDayToDelete(day)}>
+              <Button variant="quiet" onClick={() => setDayToDelete(day.id)}>
                 <span className="text-bumper">Delete day</span>
               </Button>
             </div>
@@ -345,7 +361,7 @@ export function ProgramBuilder({
         <Button
           variant="secondary"
           block
-          disabled={draft.days.length >= 14}
+          disabled={draft.days.length >= MAX_DAYS}
           onClick={() =>
             update((d) => ({
               ...d,
@@ -379,20 +395,20 @@ export function ProgramBuilder({
       </BottomSheet>
 
       <BottomSheet
-        open={dayToDelete !== null}
+        open={deletingDay !== undefined}
         onClose={() => setDayToDelete(null)}
-        title={`Delete ${dayToDelete?.name || "this day"}?`}
+        title={`Delete ${deletingDay?.name || "this day"}?`}
       >
         <div className="flex flex-col gap-3 pb-2">
           <p className="text-body text-steel">
-            This removes the day and its {dayToDelete?.slots.length ?? 0} slots.
+            This removes the day and its {deletingDay?.slots.length ?? 0} slots.
             Past workouts keep their history.
           </p>
           <Button
             variant="destructive"
             block
             onClick={() => {
-              const id = dayToDelete?.id;
+              const id = dayToDelete;
               setDayToDelete(null);
               if (id)
                 update((d) => ({

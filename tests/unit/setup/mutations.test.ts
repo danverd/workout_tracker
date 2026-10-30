@@ -27,7 +27,7 @@ import {
   updateExercise,
   updateLocation,
   updateSettings,
-} from "@/features/setup/mutations";
+} from "@/db/mutations/setup";
 import { groupByMovement } from "@/features/setup/group-exercises";
 import { exerciseInputSchema } from "@/lib/validation/setup";
 

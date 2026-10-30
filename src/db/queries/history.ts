@@ -1,3 +1,4 @@
+import { round2 } from "@/lib/format";
 import {
   and,
   asc,
@@ -321,7 +322,7 @@ export async function getExerciseHistory(
   }
   const sessions = [...grouped.values()].map((entry) => ({
     ...entry,
-    totalVolume: Math.round(entry.totalVolume * 100) / 100,
+    totalVolume: round2(entry.totalVolume),
   }));
 
   return {
@@ -384,7 +385,7 @@ export async function getSummary(
     return {
       start,
       end,
-      totalVolume: Math.round(total * 100) / 100,
+      totalVolume: round2(total),
       sessionCount: inRange.length,
       strengthCount: inRange.filter((x) => x.kind === "strength").length,
       cardioCount: inRange.filter((x) => x.kind === "cardio").length,

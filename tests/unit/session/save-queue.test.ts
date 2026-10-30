@@ -544,3 +544,49 @@ describe("sendMutation (fake fetch)", () => {
     });
   });
 });
+
+describe("cardio saves", () => {
+  const cardio = (activity: string): Mutation => ({
+    type: "putCardio",
+    sessionId: SESSION,
+    cardio: {
+      id: SESSION,
+      locationId: null,
+      activity,
+      durationSec: 1200,
+      distance: null,
+      distanceUnit: null,
+      notes: "",
+    },
+  });
+
+  it("sends an idempotent PUT keyed by the cardio id", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await sendMutation(cardio("Walk"));
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [
+        string,
+        RequestInit,
+      ];
+      expect(url).toBe(`/api/cardio/${SESSION}`);
+      expect(init.method).toBe("PUT");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps a failed save queued and retries it", async () => {
+    const send = vi
+      .fn<(m: Mutation) => Promise<void>>()
+      .mockRejectedValueOnce(new ApiError(0, "offline"))
+      .mockResolvedValue(undefined);
+    const queue = createSaveQueue({ send, baseDelayMs: 100 });
+    queue.enqueue(cardio("Row"));
+    await flush();
+    expect(queue.getSnapshot()).toMatchObject({ retrying: true, pending: 1 });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(queue.getSnapshot()).toMatchObject({ status: "saved", pending: 0 });
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+});

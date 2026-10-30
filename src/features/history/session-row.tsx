@@ -1,4 +1,5 @@
-import { sessionDetail, sessionTitle } from "@/features/history/format";
+import { sessionDetail } from "@/features/history/format";
+import { sessionTitle } from "@/lib/format";
 import type { SessionSummaryDto } from "@/types/domain";
 import { ListRow } from "@/ui/ListRow";
 

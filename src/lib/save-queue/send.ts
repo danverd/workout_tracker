@@ -39,5 +39,8 @@ export async function sendMutation(mutation: Mutation): Promise<void> {
     case "reopen":
       await apiPost(`${base(mutation.sessionId)}/reopen`);
       return;
+    case "putCardio":
+      await apiPut(`/api/cardio/${mutation.sessionId}`, mutation.cardio);
+      return;
   }
 }

@@ -3,14 +3,14 @@ import { connection } from "next/server";
 
 import { getDb } from "@/db/client";
 import { listLocations } from "@/db/queries/setup";
+import { plural } from "@/lib/format";
 import { AppShell } from "@/ui/AppShell";
 import { buttonClass } from "@/ui/button-styles";
 import { EmptyState } from "@/ui/EmptyState";
 import { ListRow } from "@/ui/ListRow";
 import { ScreenHeader } from "@/ui/ScreenHeader";
 
-const equipmentCount = (n: number) =>
-  `${n} ${n === 1 ? "item" : "items"} of equipment`;
+const equipmentCount = (n: number) => `${plural(n, "item")} of equipment`;
 
 export default async function LocationsPage() {
   await connection();

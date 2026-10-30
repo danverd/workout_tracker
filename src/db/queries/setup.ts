@@ -1,42 +1,30 @@
 import { asc, count, eq, sql } from "drizzle-orm";
-import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import type { AnyPgColumn, PgTable } from "drizzle-orm/pg-core";
 import type { Database } from "@/db/client";
 import * as s from "@/db/schema";
+import { plural } from "@/lib/format";
 import type {
-  EquipmentDto,
+  EquipmentRow,
   ExerciseDto,
+  ExerciseRow,
   LoadType,
   LocationDto,
-  MovementDto,
+  LocationRow,
+  MovementRow,
   SettingsDto,
 } from "@/types/domain";
 
 /** "2 locations and 1 exercise", or null when every count is zero. */
-export function describeUsage(
+function describeUsage(
   parts: readonly [count: number, singular: string, plural: string][],
 ): string | null {
   const phrases = parts
     .filter(([n]) => n > 0)
-    .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
+    .map(([n, one, many]) => plural(n, one, many));
   if (phrases.length === 0) return null;
   return phrases.length === 1
     ? phrases[0]
     : `${phrases.slice(0, -1).join(", ")} and ${phrases[phrases.length - 1]}`;
-}
-
-export interface EquipmentRow extends EquipmentDto {
-  /** Phrase naming what uses it ("2 locations"), or null when unused. */
-  usage: string | null;
-}
-export interface MovementRow extends MovementDto {
-  usage: string | null;
-}
-export interface LocationRow extends LocationDto {
-  /** Logged sessions at this location; deletion is only allowed at zero. */
-  sessionCount: number;
-}
-export interface ExerciseRow extends ExerciseDto {
-  usage: string | null;
 }
 
 export interface SetupCounts {
@@ -76,67 +64,108 @@ export async function getSetupCounts(db: Database): Promise<SetupCounts> {
   };
 }
 
-export async function listEquipment(
+/** A table whose rows reference an entity, counted per entity id. */
+interface UsageSource {
+  table: PgTable;
+  column: AnyPgColumn;
+  one: string;
+  many: string;
+}
+
+/** Runs `rows` and one grouped count per source, then attaches the usage phrase. */
+async function listWithUsage<T extends { id: string }, R>(
+  db: Database,
+  rows: Promise<T[]>,
+  sources: readonly UsageSource[],
+  toRow: (row: T, usage: string | null) => R,
+): Promise<R[]> {
+  const [list, ...counts] = await Promise.all([
+    rows,
+    ...sources.map((source) =>
+      db
+        .select({ id: source.column, n: count() })
+        .from(source.table)
+        .groupBy(source.column),
+    ),
+  ]);
+  const maps = counts.map((rows) =>
+    countMap(rows as { id: string | null; n: number }[]),
+  );
+  return list.map((row) =>
+    toRow(
+      row,
+      describeUsage(
+        sources.map((source, i) => [
+          maps[i].get(row.id) ?? 0,
+          source.one,
+          source.many,
+        ]),
+      ),
+    ),
+  );
+}
+
+export function listEquipment(
   db: Database,
   onlyId?: string,
 ): Promise<EquipmentRow[]> {
-  const [rows, inLocations, inExercises] = await Promise.all([
+  return listWithUsage(
+    db,
     db
       .select()
       .from(s.equipment)
       .where(onlyId ? eq(s.equipment.id, onlyId) : undefined)
       .orderBy(lowerName(s.equipment.name)),
-    db
-      .select({ id: s.locationEquipment.equipmentId, n: count() })
-      .from(s.locationEquipment)
-      .groupBy(s.locationEquipment.equipmentId),
-    db
-      .select({ id: s.exerciseEquipment.equipmentId, n: count() })
-      .from(s.exerciseEquipment)
-      .groupBy(s.exerciseEquipment.equipmentId),
-  ]);
-  const locs = countMap(inLocations);
-  const exs = countMap(inExercises);
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    hasWeights: row.hasWeights,
-    usage: describeUsage([
-      [locs.get(row.id) ?? 0, "location", "locations"],
-      [exs.get(row.id) ?? 0, "exercise", "exercises"],
-    ]),
-  }));
+    [
+      {
+        table: s.locationEquipment,
+        column: s.locationEquipment.equipmentId,
+        one: "location",
+        many: "locations",
+      },
+      {
+        table: s.exerciseEquipment,
+        column: s.exerciseEquipment.equipmentId,
+        one: "exercise",
+        many: "exercises",
+      },
+    ],
+    (row, usage) => ({
+      id: row.id,
+      name: row.name,
+      hasWeights: row.hasWeights,
+      usage,
+    }),
+  );
 }
 
-export async function listMovements(
+export function listMovements(
   db: Database,
   onlyId?: string,
 ): Promise<MovementRow[]> {
-  const [rows, inExercises, inSlots] = await Promise.all([
+  return listWithUsage(
+    db,
     db
       .select()
       .from(s.movements)
       .where(onlyId ? eq(s.movements.id, onlyId) : undefined)
       .orderBy(lowerName(s.movements.name)),
-    db
-      .select({ id: s.exercises.movementId, n: count() })
-      .from(s.exercises)
-      .groupBy(s.exercises.movementId),
-    db
-      .select({ id: s.programSlots.movementId, n: count() })
-      .from(s.programSlots)
-      .groupBy(s.programSlots.movementId),
-  ]);
-  const exs = countMap(inExercises);
-  const slots = countMap(inSlots);
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    usage: describeUsage([
-      [exs.get(row.id) ?? 0, "exercise", "exercises"],
-      [slots.get(row.id) ?? 0, "program slot", "program slots"],
-    ]),
-  }));
+    [
+      {
+        table: s.exercises,
+        column: s.exercises.movementId,
+        one: "exercise",
+        many: "exercises",
+      },
+      {
+        table: s.programSlots,
+        column: s.programSlots.movementId,
+        one: "program slot",
+        many: "program slots",
+      },
+    ],
+    (row, usage) => ({ id: row.id, name: row.name, usage }),
+  );
 }
 
 /** `links` may hold other locations' rows; only this location's are used. */
@@ -211,34 +240,43 @@ export async function listExercises(
   db: Database,
   onlyId?: string,
 ): Promise<ExerciseRow[]> {
-  const [rows, links, inSessions, inSlots] = await Promise.all([
+  const [links, rows] = await Promise.all([
+    db
+      .select()
+      .from(s.exerciseEquipment)
+      .where(onlyId ? eq(s.exerciseEquipment.exerciseId, onlyId) : undefined),
+    listExerciseRows(db, onlyId),
+  ]);
+  return rows.map(({ row, usage }) => ({
+    ...toExerciseDto(row, links),
+    usage,
+  }));
+}
+
+function listExerciseRows(db: Database, onlyId?: string) {
+  return listWithUsage(
+    db,
     db
       .select()
       .from(s.exercises)
       .where(onlyId ? eq(s.exercises.id, onlyId) : undefined)
       .orderBy(lowerName(s.exercises.name)),
-    db
-      .select()
-      .from(s.exerciseEquipment)
-      .where(onlyId ? eq(s.exerciseEquipment.exerciseId, onlyId) : undefined),
-    db
-      .select({ id: s.sessionExercises.exerciseId, n: count() })
-      .from(s.sessionExercises)
-      .groupBy(s.sessionExercises.exerciseId),
-    db
-      .select({ id: s.programSlots.exerciseId, n: count() })
-      .from(s.programSlots)
-      .groupBy(s.programSlots.exerciseId),
-  ]);
-  const sessions = countMap(inSessions);
-  const slots = countMap(inSlots);
-  return rows.map((row) => ({
-    ...toExerciseDto(row, links),
-    usage: describeUsage([
-      [sessions.get(row.id) ?? 0, "logged workout", "logged workouts"],
-      [slots.get(row.id) ?? 0, "program slot", "program slots"],
-    ]),
-  }));
+    [
+      {
+        table: s.sessionExercises,
+        column: s.sessionExercises.exerciseId,
+        one: "logged workout",
+        many: "logged workouts",
+      },
+      {
+        table: s.programSlots,
+        column: s.programSlots.exerciseId,
+        one: "program slot",
+        many: "program slots",
+      },
+    ],
+    (row, usage) => ({ row, usage }),
+  );
 }
 
 export async function getExercise(db: Database, id: string) {

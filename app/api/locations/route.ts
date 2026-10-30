@@ -1,6 +1,6 @@
 import { getDb } from "@/db/client";
 import { listLocations } from "@/db/queries/setup";
-import { createLocation } from "@/features/setup/mutations";
+import { createLocation } from "@/db/mutations/setup";
 import { created, parseJson, route } from "@/lib/http";
 import { locationInputSchema } from "@/lib/validation/setup";
 

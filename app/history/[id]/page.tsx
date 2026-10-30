@@ -4,13 +4,8 @@ import { connection } from "next/server";
 import { getDb } from "@/db/client";
 import { getSessionDetail } from "@/db/queries/history";
 import { DeleteCardioButton } from "@/features/history/delete-cardio-button";
-import {
-  formatCardio,
-  formatDay,
-  formatNumber,
-  formatVolume,
-  plural,
-} from "@/features/history/format";
+import { formatCardio, formatVolume } from "@/features/history/format";
+import { formatDay, formatNumber, plural } from "@/lib/format";
 import { idSchema } from "@/lib/validation/setup";
 import { buttonClass } from "@/ui/button-styles";
 import { AppShell } from "@/ui/AppShell";

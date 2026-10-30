@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import type { EquipmentRow, LocationRow } from "@/db/queries/setup";
-import { ConfirmButton } from "@/features/setup/ConfirmButton";
+import type { EquipmentRow, LocationRow } from "@/types/domain";
+import { ConfirmButton } from "@/ui/ConfirmButton";
 
 import {
   emptyWeightList,
@@ -162,11 +162,12 @@ export function LocationForm({
             {location.sessionCount === 0 ? (
               <ConfirmButton
                 label="Delete location"
-                confirmLabel="Tap again to delete"
                 disabled={busy}
-                onConfirm={() =>
-                  void run(() => apiDelete(`/api/locations/${location.id}`))
-                }
+                onConfirm={async () => {
+                  await apiDelete(`/api/locations/${location.id}`);
+                  router.push("/setup/locations");
+                  router.refresh();
+                }}
               />
             ) : (
               <p className="text-meta text-rubber">

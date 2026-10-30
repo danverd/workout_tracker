@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { asc, count, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { HttpError } from "@/lib/http";
 import type { Database } from "@/db/client";
+import { setArchived } from "@/db/mutations/shared";
 import * as s from "@/db/schema";
 import type { ProgramSaveInput } from "@/lib/validation/programs";
 import type {
@@ -347,12 +348,7 @@ export async function setProgramArchived(
   id: string,
   archived: boolean,
 ): Promise<ProgramDto | null> {
-  const [row] = await db
-    .update(s.programs)
-    .set({ archivedAt: archived ? new Date() : null })
-    .where(eq(s.programs.id, id))
-    .returning({ id: s.programs.id });
-  if (!row) return null;
+  if (!(await setArchived(db, s.programs, id, archived))) return null;
   if (archived) {
     await db
       .update(s.settings)

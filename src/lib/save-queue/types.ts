@@ -1,6 +1,7 @@
 import type { SaveState } from "@/ui/SaveStatus";
 import type { LoadType } from "@/types/domain";
 import type {
+  CardioInput,
   SessionExerciseInput,
   SessionPatchInput,
   SessionSetInput,
@@ -36,7 +37,13 @@ export type Mutation =
   | { type: "deleteExercise"; sessionId: string; exerciseId: string }
   | { type: "patchSession"; sessionId: string; patch: SessionPatchInput }
   | { type: "finish"; sessionId: string; finishedAt: string }
-  | { type: "reopen"; sessionId: string };
+  | { type: "reopen"; sessionId: string }
+  /** A cardio entry is a session of its own: `sessionId` is the cardio id. */
+  | {
+      type: "putCardio";
+      sessionId: string;
+      cardio: Omit<CardioInput, "date" | "startedAt">;
+    };
 
 export type MutationType = Mutation["type"];
 
@@ -48,6 +55,7 @@ export const MUTATION_TYPES: readonly MutationType[] = [
   "patchSession",
   "finish",
   "reopen",
+  "putCardio",
 ];
 
 export interface QueueSnapshot {

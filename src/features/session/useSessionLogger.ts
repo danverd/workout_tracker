@@ -19,7 +19,7 @@ import {
 } from "./state";
 import { suggestionsFor } from "./preview";
 
-export const DEFAULT_NEW_SETS = 3;
+const DEFAULT_NEW_SETS = 3;
 
 /**
  * A weight of 0 with no history is "never set" for anything but bodyweight

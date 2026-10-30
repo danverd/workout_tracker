@@ -1,9 +1,10 @@
-import type { SessionCatalog } from "@/db/queries/sessions";
+import { plural } from "@/lib/format";
 import { isAvailableAt, rankCandidates } from "@/lib/domain/resolve-slots";
 import type {
   ExerciseDto,
   LastSetDto,
   LocationDto,
+  SessionCatalog,
   SetTarget,
   UsageHistory,
 } from "@/types/domain";
@@ -101,7 +102,7 @@ export function substitutesFor(
 export function formatTarget(target: SetTarget | null, sets?: number): string {
   const count = sets ?? target?.sets;
   if (count === undefined) return "";
-  if (!target) return `${count} ${count === 1 ? "set" : "sets"}`;
+  if (!target) return plural(count, "set");
   if (target.amrap) return `${count} × AMRAP`;
   const { repMin, repMax } = target;
   if (repMin !== null && repMax !== null)
@@ -109,9 +110,7 @@ export function formatTarget(target: SetTarget | null, sets?: number): string {
       ? `${count} × ${repMin}`
       : `${count} × ${repMin}–${repMax}`;
   const single = repMin ?? repMax;
-  return single === null
-    ? `${count} ${count === 1 ? "set" : "sets"}`
-    : `${count} × ${single}`;
+  return single === null ? plural(count, "set") : `${count} × ${single}`;
 }
 
 /** "last: 50 × 10, 50 × 9" (up to three sets), or "" with no history. */

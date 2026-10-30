@@ -1,5 +1,5 @@
 import { getDb } from "@/db/client";
-import { deleteMovement, updateMovement } from "@/features/setup/mutations";
+import { deleteMovement, updateMovement } from "@/db/mutations/setup";
 import { parseId, parseJson, route } from "@/lib/http";
 import { movementInputSchema } from "@/lib/validation/setup";
 

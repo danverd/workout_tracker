@@ -3,11 +3,8 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { getDb } from "@/db/client";
 import { getExerciseHistory } from "@/db/queries/history";
-import {
-  formatDay,
-  formatNumber,
-  formatVolume,
-} from "@/features/history/format";
+import { formatVolume } from "@/features/history/format";
+import { formatDay, formatNumber } from "@/lib/format";
 import { idSchema } from "@/lib/validation/setup";
 import { AppShell } from "@/ui/AppShell";
 import { EmptyState } from "@/ui/EmptyState";

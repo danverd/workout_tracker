@@ -1,16 +1,24 @@
-import { useId, type InputHTMLAttributes } from "react";
+import { useId, type ComponentProps } from "react";
 
 export type TextFieldProps = Omit<
-  InputHTMLAttributes<HTMLInputElement>,
+  ComponentProps<"input">,
   "className" | "id"
 > & {
   label: string;
+  /** Keeps the label for screen readers but hides it; for inline rows. */
+  hideLabel?: boolean;
   hint?: string;
   /** Shown under the field and announced; also sets aria-invalid. */
   error?: string;
 };
 
-export function TextField({ label, hint, error, ...rest }: TextFieldProps) {
+export function TextField({
+  label,
+  hideLabel,
+  hint,
+  error,
+  ...rest
+}: TextFieldProps) {
   const id = useId();
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
@@ -18,8 +26,13 @@ export function TextField({ label, hint, error, ...rest }: TextFieldProps) {
     [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") ||
     undefined;
   return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-body text-steel font-medium">
+    <div
+      className={`flex flex-col gap-1.5 ${hideLabel ? "min-w-0 flex-1" : ""}`}
+    >
+      <label
+        htmlFor={id}
+        className={`text-body text-steel font-medium ${hideLabel ? "sr-only" : ""}`}
+      >
         {label}
       </label>
       <input
