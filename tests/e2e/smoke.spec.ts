@@ -210,7 +210,7 @@ test.describe("installable PWA", () => {
 
   // The browser fetches the manifest and home-screen icons without the session
   // cookie, but proxy.ts redirects every non-public path to /login.
-  test.fixme("serves the manifest and icons without a session", async ({
+  test("serves the manifest and icons without a session", async ({
     request,
   }) => {
     for (const path of ["/manifest.webmanifest", "/icon-192.png"]) {

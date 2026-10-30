@@ -9,4 +9,9 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/((?!_next|favicon.ico).*)"] };
+// Static app assets (fetched by browsers without cookies) stay public.
+export const config = {
+  matcher: [
+    "/((?!_next|favicon.ico|icon.svg|icon-.*\\.png|apple-touch-icon.*\\.png|manifest.webmanifest).*)",
+  ],
+};

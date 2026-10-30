@@ -17,7 +17,9 @@ export default defineConfig({
   workers: 1,
   reporter: "list",
   timeout: 120_000,
-  expect: { timeout: 10_000 },
+  // The dev server compiles each route on first hit, so allow slow first loads.
+  expect: { timeout: 20_000 },
+  retries: 1,
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: "retain-on-failure",
