@@ -21,6 +21,15 @@ const barlowCondensed = Barlow_Condensed({
 export const metadata: Metadata = {
   title: "Workout Tracker",
   description: "Personal workout logging and volume tracking.",
+  appleWebApp: {
+    capable: true,
+    title: "Workouts",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 export const viewport: Viewport = {

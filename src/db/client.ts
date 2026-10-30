@@ -53,7 +53,12 @@ export function getDb(): Promise<Database> {
     const url = process.env.DATABASE_URL;
     const connecting = url
       ? connectNeon(url)
-      : connectPglite(path.join(process.cwd(), ".data", "pglite"));
+      : connectPglite(
+          path.resolve(
+            process.cwd(),
+            process.env.PGLITE_DATA_DIR ?? ".data/pglite",
+          ),
+        );
     store.__workoutDb = connecting.catch((error) => {
       store.__workoutDb = undefined;
       throw error;
