@@ -1,3 +1,4 @@
+import type { SaveState } from "@/ui/SaveStatus";
 import type { LoadType } from "@/types/domain";
 import type {
   SessionExerciseInput,
@@ -48,8 +49,6 @@ export const MUTATION_TYPES: readonly MutationType[] = [
   "finish",
   "reopen",
 ];
-
-export type SaveState = "saved" | "saving" | "error";
 
 export interface QueueSnapshot {
   status: SaveState;

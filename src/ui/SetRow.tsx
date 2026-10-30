@@ -1,8 +1,12 @@
 "use client";
 
+import { memo } from "react";
 import { CheckIcon } from "@/ui/icons";
 
 export type SetRowProps = {
+  /** Passed back to the callbacks so parents can share one stable handler. */
+  rowId: string;
+  setId: string;
   /** 1-based set number shown at the left. */
   index: number;
   /** Weight in the exercise's unit; null when not set. */
@@ -14,14 +18,16 @@ export type SetRowProps = {
   /** Unit used in accessible names, e.g. "lb". Default "lb". */
   unit?: string;
   done: boolean;
-  onToggleDone: () => void;
+  onToggleDone: (rowId: string, setId: string) => void;
   /** Tapping the weight numeral. */
-  onEditWeight: () => void;
+  onEditWeight: (rowId: string, setId: string) => void;
   /** Tapping the reps numeral. */
-  onEditReps: () => void;
+  onEditReps: (rowId: string, setId: string) => void;
 };
 
-export function SetRow({
+export const SetRow = memo(function SetRow({
+  rowId,
+  setId,
   index,
   weight,
   reps,
@@ -66,7 +72,7 @@ export function SetRow({
 
       <button
         type="button"
-        onClick={onEditWeight}
+        onClick={() => onEditWeight(rowId, setId)}
         aria-label={`Set ${index} weight, ${
           weight === null ? "not set" : `${weight} ${unit}`
         }. Edit`}
@@ -84,7 +90,7 @@ export function SetRow({
 
       <button
         type="button"
-        onClick={onEditReps}
+        onClick={() => onEditReps(rowId, setId)}
         aria-label={`Set ${index} reps, ${
           reps === null ? "not set" : reps
         }. Edit`}
@@ -99,7 +105,7 @@ export function SetRow({
         type="button"
         aria-pressed={done}
         aria-label={`Set ${index} done`}
-        onClick={onToggleDone}
+        onClick={() => onToggleDone(rowId, setId)}
         className="relative flex w-16 shrink-0 items-center justify-center"
       >
         <span
@@ -114,4 +120,4 @@ export function SetRow({
       </button>
     </div>
   );
-}
+});

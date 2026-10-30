@@ -10,7 +10,17 @@ function setup(done = false) {
     onEditWeight: vi.fn(),
     onEditReps: vi.fn(),
   };
-  render(<SetRow index={2} weight={50} reps={10} done={done} {...handlers} />);
+  render(
+    <SetRow
+      rowId="r1"
+      setId="s1"
+      index={2}
+      weight={50}
+      reps={10}
+      done={done}
+      {...handlers}
+    />,
+  );
   return handlers;
 }
 
@@ -18,7 +28,7 @@ describe("SetRow", () => {
   it("fires onToggleDone from the done button", async () => {
     const { onToggleDone } = setup();
     await userEvent.click(screen.getByRole("button", { name: "Set 2 done" }));
-    expect(onToggleDone).toHaveBeenCalledTimes(1);
+    expect(onToggleDone).toHaveBeenCalledWith("r1", "s1");
   });
 
   it("exposes accessible names and pressed state", () => {
@@ -40,7 +50,7 @@ describe("SetRow", () => {
     const { onEditWeight, onEditReps } = setup();
     await userEvent.click(screen.getByRole("button", { name: /weight/ }));
     await userEvent.click(screen.getByRole("button", { name: /reps/ }));
-    expect(onEditWeight).toHaveBeenCalledTimes(1);
-    expect(onEditReps).toHaveBeenCalledTimes(1);
+    expect(onEditWeight).toHaveBeenCalledWith("r1", "s1");
+    expect(onEditReps).toHaveBeenCalledWith("r1", "s1");
   });
 });

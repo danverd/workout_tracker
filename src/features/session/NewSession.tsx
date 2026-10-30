@@ -11,15 +11,13 @@ import { MinusIcon, PlusIcon } from "@/ui/icons";
 import { IconButton } from "@/ui/IconButton";
 import { Select } from "@/ui/Select";
 import {
-  availableExercises,
   findExercise,
   formatLast,
   formatTarget,
   newId,
-  substitutesFor,
   type Catalog,
 } from "./catalog";
-import { ExercisePicker } from "./ExercisePicker";
+import { ExercisePickerSheet, type Picking } from "./ExercisePickerSheet";
 import {
   buildCreateInput,
   buildPreviewItems,
@@ -34,21 +32,23 @@ import {
 
 const MAX_SETS = 12;
 
-type Picking = { kind: "swap"; key: string } | { kind: "add" } | null;
-
 export function NewSession({ catalog }: { catalog: Catalog }) {
   const router = useRouter();
-  const [locationId, setLocationId] = useState(() =>
-    defaultLocationId(catalog),
-  );
-  const [choice, setChoice] = useState(() => defaultDayChoice(catalog));
-  const [items, setItems] = useState<PreviewItem[]>(() =>
-    buildPreviewItems(
-      catalog,
-      defaultLocationId(catalog),
-      parseDayChoice(catalog, defaultDayChoice(catalog))?.day ?? null,
-    ),
-  );
+  const [{ locationId, choice, items }, setForm] = useState(() => {
+    const locationId = defaultLocationId(catalog);
+    const choice = defaultDayChoice(catalog);
+    return {
+      locationId,
+      choice,
+      items: buildPreviewItems(
+        catalog,
+        locationId,
+        parseDayChoice(catalog, choice)?.day ?? null,
+      ),
+    };
+  });
+  const setItems = (update: (current: PreviewItem[]) => PreviewItem[]) =>
+    setForm((form) => ({ ...form, items: update(form.items) }));
   const [picking, setPicking] = useState<Picking>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,19 +67,18 @@ export function NewSession({ catalog }: { catalog: Catalog }) {
   }
 
   const selected = parseDayChoice(catalog, choice);
-  const available = new Set(
-    availableExercises(catalog, locationId).map((e) => e.id),
-  );
   const unresolved = items.filter((item) => item.exerciseId === null).length;
 
-  function reresolve(nextLocation: string | null, nextChoice: string) {
-    setItems(
-      buildPreviewItems(
+  function reresolve(patch: { locationId?: string; choice?: string }) {
+    const next = { locationId, choice, ...patch };
+    setForm({
+      ...next,
+      items: buildPreviewItems(
         catalog,
-        nextLocation,
-        parseDayChoice(catalog, nextChoice)?.day ?? null,
+        next.locationId,
+        parseDayChoice(catalog, next.choice)?.day ?? null,
       ),
-    );
+    });
   }
 
   function updateItem(key: string, change: Partial<PreviewItem>) {
@@ -90,7 +89,7 @@ export function NewSession({ catalog }: { catalog: Catalog }) {
 
   function pick(exerciseId: string) {
     if (picking?.kind === "swap")
-      updateItem(picking.key, { exerciseId, status: "resolved" });
+      updateItem(picking.id, { exerciseId, status: "resolved" });
     else if (picking?.kind === "add")
       setItems((current) => [
         ...current,
@@ -138,21 +137,8 @@ export function NewSession({ catalog }: { catalog: Catalog }) {
 
   const swapItem =
     picking?.kind === "swap"
-      ? items.find((item) => item.key === picking.key)
+      ? items.find((item) => item.key === picking.id)
       : undefined;
-
-  const swapCandidates = swapItem
-    ? [
-        ...new Set([
-          ...swapItem.candidateIds,
-          ...substitutesFor(
-            catalog,
-            locationId,
-            findExercise(catalog, swapItem.exerciseId),
-          ),
-        ]),
-      ]
-    : [];
 
   return (
     <div className="flex flex-col gap-4 pb-20">
@@ -160,8 +146,7 @@ export function NewSession({ catalog }: { catalog: Catalog }) {
         label="Location"
         value={locationId ?? ""}
         onChange={(event) => {
-          setLocationId(event.target.value);
-          reresolve(event.target.value, choice);
+          reresolve({ locationId: event.target.value });
         }}
         options={catalog.locations.map((l) => ({ value: l.id, label: l.name }))}
       />
@@ -169,8 +154,7 @@ export function NewSession({ catalog }: { catalog: Catalog }) {
         label="Day"
         value={choice}
         onChange={(event) => {
-          setChoice(event.target.value);
-          reresolve(locationId, event.target.value);
+          reresolve({ choice: event.target.value });
         }}
         options={dayOptions(catalog)}
       />
@@ -198,7 +182,7 @@ export function NewSession({ catalog }: { catalog: Catalog }) {
                 key={item.key}
                 item={item}
                 catalog={catalog}
-                onSwap={() => setPicking({ kind: "swap", key: item.key })}
+                onSwap={() => setPicking({ kind: "swap", id: item.key })}
                 onRemove={() =>
                   setItems((current) =>
                     current.filter((other) => other.key !== item.key),
@@ -249,15 +233,14 @@ export function NewSession({ catalog }: { catalog: Catalog }) {
         </div>
       </div>
 
-      <ExercisePicker
-        open={picking !== null}
-        title={picking?.kind === "swap" ? "Swap exercise" : "Add exercise"}
+      <ExercisePickerSheet
+        picking={picking}
+        catalog={catalog}
+        locationId={locationId}
+        currentExerciseId={swapItem?.exerciseId ?? null}
+        extraCandidateIds={swapItem?.candidateIds}
         onClose={() => setPicking(null)}
         onPick={pick}
-        exercises={catalog.exercises}
-        availableIds={available}
-        candidateIds={swapCandidates}
-        currentId={swapItem?.exerciseId ?? null}
       />
     </div>
   );

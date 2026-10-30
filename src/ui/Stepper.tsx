@@ -3,6 +3,7 @@
 import { ChipGroup } from "@/ui/ChipGroup";
 import { MinusIcon, PlusIcon } from "@/ui/icons";
 import { NumberField } from "@/ui/NumberField";
+import { nextWeight, previousWeight } from "@/lib/domain/weights";
 
 export type StepperProps = {
   /** What is being edited, e.g. "Weight" or "Reps". Used in button names. */
@@ -10,19 +11,18 @@ export type StepperProps = {
   /** Current value; null when not set yet. */
   value: number | null;
   onChange: (value: number) => void;
-  /** Amount each - / + press changes the value by. */
+  /** Amount each - / + press changes the value by when there are no options. */
   increment: number;
-  /** Quick-pick values, e.g. the location's available dumbbells. */
+  /**
+   * Quick-pick values, e.g. the location's available dumbbells. When present,
+   * - / + step to the previous/next one instead of using `increment`.
+   */
   options?: readonly number[];
   /** Lowest allowed value. Defaults to 0. */
   min?: number;
   /** Optional unit shown next to the value and in the keypad field. */
   unit?: string;
 };
-
-function round(n: number): number {
-  return Math.round(n * 1000) / 1000;
-}
 
 export function Stepper({
   label,
@@ -36,7 +36,12 @@ export function Stepper({
   const current = value ?? min;
 
   function step(direction: 1 | -1) {
-    onChange(Math.max(min, round(current + direction * increment)));
+    const stepOptions = { weights: options, increment };
+    const next =
+      direction === 1
+        ? nextWeight(current, stepOptions)
+        : previousWeight(current, stepOptions);
+    onChange(Math.max(min, next));
   }
 
   return (

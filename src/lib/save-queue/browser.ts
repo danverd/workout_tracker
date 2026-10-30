@@ -24,6 +24,11 @@ export function getBrowserQueue(): SaveQueue {
     if (inBrowser) {
       const active = queue;
       window.addEventListener("online", () => active.retryNow());
+      // Persist synchronously when the page may be going away.
+      window.addEventListener("pagehide", () => active.flush());
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") active.flush();
+      });
       active.start();
     }
   }

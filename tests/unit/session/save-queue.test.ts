@@ -240,6 +240,7 @@ describe("persistence", () => {
     const storage = memoryStorage();
     const queue = createSaveQueue({ send, storage });
     queue.enqueue(putSet(1));
+    await Promise.resolve();
     expect(QUEUE_STORAGE_KEY).toMatch(/:v\d+$/);
     const saved = JSON.parse(storage.data.get(QUEUE_STORAGE_KEY) ?? "{}");
     expect(saved.version).toBe(1);
@@ -249,6 +250,53 @@ describe("persistence", () => {
     calls[0].resolve();
     await flush();
     expect(storage.data.has(QUEUE_STORAGE_KEY)).toBe(false);
+  });
+
+  it("coalesces many enqueues in one tick into a single storage write", async () => {
+    const { send } = controlledSend();
+    const storage = memoryStorage();
+    const setItem = vi.spyOn(storage, "setItem");
+    const queue = createSaveQueue({ send, storage });
+    queue.enqueue(putSet(1));
+    queue.enqueue(putSet(2));
+    queue.enqueue(putSet(3));
+    expect(setItem).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(setItem).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(storage.data.get(QUEUE_STORAGE_KEY)!).items).toHaveLength(
+      3,
+    );
+  });
+
+  it("flush() persists synchronously, as pagehide needs", () => {
+    const { send } = controlledSend();
+    const storage = memoryStorage();
+    const queue = createSaveQueue({ send, storage });
+    queue.enqueue(putSet(1));
+    queue.enqueue(putSet(2));
+    queue.flush();
+    expect(JSON.parse(storage.data.get(QUEUE_STORAGE_KEY)!).items).toHaveLength(
+      2,
+    );
+  });
+
+  it("enqueueMany adds in order with one persist and one notification", async () => {
+    const { send } = controlledSend();
+    const storage = memoryStorage();
+    const setItem = vi.spyOn(storage, "setItem");
+    const queue = createSaveQueue({ send, storage });
+    const listener = vi.fn();
+    queue.subscribe(listener);
+    queue.enqueueMany([putSet(1), putSet(2, 60), putSet(3)]);
+    expect(queue.getSnapshot().pending).toBe(3);
+    expect(listener).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    expect(setItem).toHaveBeenCalledTimes(1);
+    expect(queue.pendingFor(SESSION).map((m) => m.type)).toEqual([
+      "putSet",
+      "putSet",
+      "putSet",
+    ]);
   });
 
   it("keeps an in-flight mutation persisted until it is acknowledged", async () => {

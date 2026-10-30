@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api";
+import type { SaveState } from "@/ui/SaveStatus";
 import { MUTATION_TYPES, type Mutation, type QueueSnapshot } from "./types";
 
 /** Bump when the persisted shape changes; old payloads are then ignored. */
@@ -19,15 +20,13 @@ export interface SaveQueueOptions {
   maxDelayMs?: number;
 }
 
-const SAVED: QueueSnapshot = {
+/** Server-render snapshot: nothing pending. */
+export const EMPTY_SNAPSHOT: QueueSnapshot = {
   status: "saved",
   pending: 0,
   retrying: false,
   rejected: null,
 };
-
-/** Server-render snapshot: nothing pending. */
-export const EMPTY_SNAPSHOT = SAVED;
 
 function isMutation(value: unknown): value is Mutation {
   if (!value || typeof value !== "object") return false;
@@ -81,12 +80,13 @@ export function createSaveQueue(options: SaveQueueOptions) {
     maxDelayMs = 30_000,
   } = options;
 
-  let items: Mutation[] = restore();
+  const items: Mutation[] = restore();
   let inFlight: Mutation | null = null;
   let running = false;
   let failures = 0;
   let retrying = false;
   let rejected: string | null = null;
+  let persistScheduled = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let snapshot: QueueSnapshot = computeSnapshot();
   const listeners = new Set<() => void>();
@@ -109,7 +109,18 @@ export function createSaveQueue(options: SaveQueueOptions) {
     }
   }
 
+  /**
+   * Coalesces writes to one per microtask. `flush()` writes immediately, so
+   * pagehide can persist synchronously.
+   */
   function persist() {
+    if (!storage || persistScheduled) return;
+    persistScheduled = true;
+    queueMicrotask(flush);
+  }
+
+  function flush() {
+    persistScheduled = false;
     if (!storage) return;
     try {
       if (items.length === 0) storage.removeItem(storageKey);
@@ -124,7 +135,7 @@ export function createSaveQueue(options: SaveQueueOptions) {
   }
 
   function computeSnapshot(): QueueSnapshot {
-    const status =
+    const status: SaveState =
       retrying || rejected ? "error" : items.length > 0 ? "saving" : "saved";
     return { status, pending: items.length, retrying, rejected };
   }
@@ -173,7 +184,7 @@ export function createSaveQueue(options: SaveQueueOptions) {
             return;
           }
           // Not retryable (4xx or a bug): drop it so the rest can proceed.
-          items = items.slice(1);
+          items.shift();
           rejected =
             error instanceof Error ? error.message : "A change was rejected.";
           persist();
@@ -181,7 +192,7 @@ export function createSaveQueue(options: SaveQueueOptions) {
           continue;
         }
         inFlight = null;
-        items = items.slice(1);
+        items.shift();
         failures = 0;
         retrying = false;
         persist();
@@ -192,18 +203,33 @@ export function createSaveQueue(options: SaveQueueOptions) {
     }
   }
 
+  function append(mutation: Mutation) {
+    const tail = items.at(-1);
+    const merged = tail && tail !== inFlight ? coalesce(tail, mutation) : null;
+    if (merged) items[items.length - 1] = merged;
+    else items.push(mutation);
+  }
+
   return {
     /** Appends a mutation (or folds it into the tail) and starts sending. */
     enqueue(mutation: Mutation) {
-      const tail = items.at(-1);
-      const merged =
-        tail && tail !== inFlight ? coalesce(tail, mutation) : null;
-      items = merged ? [...items.slice(0, -1), merged] : [...items, mutation];
+      append(mutation);
       rejected = null;
       persist();
       emit();
       if (timer === null) void run();
     },
+    /** Like `enqueue` for several mutations: one persist, one emit. */
+    enqueueMany(mutations: readonly Mutation[]) {
+      if (mutations.length === 0) return;
+      for (const mutation of mutations) append(mutation);
+      rejected = null;
+      persist();
+      emit();
+      if (timer === null) void run();
+    },
+    /** Writes pending work to storage now (pagehide / tab hidden). */
+    flush,
     /** Sends now, skipping any backoff wait (e.g. on the `online` event). */
     retryNow() {
       clearTimer();

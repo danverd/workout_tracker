@@ -85,4 +85,42 @@ describe("Stepper", () => {
     await userEvent.type(field, "0");
     expect(onChange).toHaveBeenLastCalledWith(1);
   });
+
+  it("steps to the next and previous available weight when options exist", async () => {
+    const onChange = vi.fn();
+    render(
+      <Stepper
+        label="Weight"
+        value={20}
+        increment={5}
+        options={[10, 20, 35, 50]}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Increase weight" }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith(35);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Decrease weight" }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith(10);
+  });
+
+  it("stays put at the heaviest available weight", async () => {
+    const onChange = vi.fn();
+    render(
+      <Stepper
+        label="Weight"
+        value={50}
+        increment={5}
+        options={[10, 20, 35, 50]}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Increase weight" }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith(50);
+  });
 });

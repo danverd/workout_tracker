@@ -81,6 +81,8 @@ export function Gallery() {
             {sets.map((set, i) => (
               <SetRow
                 key={i}
+                rowId="gallery"
+                setId={String(i)}
                 index={i + 1}
                 weight={set.weight}
                 reps={set.reps}
