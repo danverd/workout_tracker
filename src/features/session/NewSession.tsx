@@ -229,7 +229,10 @@ export function NewSession({ catalog }: { catalog: Catalog }) {
       ) : null}
       {unresolved > 0 ? (
         <p className="text-meta text-rubber">
-          Choose an exercise for each line, or remove it, to start.
+          {unresolved === 1
+            ? "1 line has no exercise here and will be skipped."
+            : `${unresolved} lines have no exercise here and will be skipped.`}{" "}
+          Choose one to include it.
         </p>
       ) : null}
 
@@ -238,7 +241,7 @@ export function NewSession({ catalog }: { catalog: Catalog }) {
           <Button
             variant="primary"
             block
-            disabled={starting || unresolved > 0 || !locationId}
+            disabled={starting || !locationId}
             onClick={start}
           >
             {starting ? "Starting…" : "Start session"}

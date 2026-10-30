@@ -5,6 +5,8 @@ const developmentScriptSource =
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Keep the dev badge from covering the tab bar when previewing on a phone.
+  devIndicators: false,
   // PGlite loads its wasm/data files from disk and must not be bundled.
   serverExternalPackages: ["@electric-sql/pglite"],
   // `npm run dev:phone` sets DEV_LAN_HOST so the phone can load dev assets.
