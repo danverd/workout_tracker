@@ -5,6 +5,10 @@ const developmentScriptSource =
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // PGlite loads its wasm/data files from disk and must not be bundled.
+  serverExternalPackages: ["@electric-sql/pglite"],
+  // `npm run dev:phone` sets DEV_LAN_HOST so the phone can load dev assets.
+  allowedDevOrigins: process.env.DEV_LAN_HOST ? [process.env.DEV_LAN_HOST] : [],
   headers: async () => [
     {
       source: "/(.*)",
