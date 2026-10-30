@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { AppShell } from "@/ui/AppShell";
@@ -128,9 +129,9 @@ export function Gallery() {
           <Button variant="secondary" disabled>
             Disabled
           </Button>
-          <a href="/programs" className={buttonClass("secondary")}>
+          <Link href="/programs" className={buttonClass("secondary")}>
             Link styled as button
-          </a>
+          </Link>
           <div>
             <IconButton label="Add set" icon={<PlusIcon />} />
           </div>
