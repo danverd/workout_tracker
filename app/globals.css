@@ -1,34 +1,104 @@
 @import "tailwindcss";
 
-:root {
-  --background: #080b12;
-  --foreground: #f8fafc;
-  --surface: #111827;
-  --surface-muted: #1f2937;
-  --accent: #22c55e;
-  --accent-strong: #16a34a;
-  --danger: #f87171;
-}
+/*
+ * Design tokens (design doc section 9). Light theme.
+ * Contrast (WCAG AA, computed): steel on chalk 12.2:1, rubber on chalk 5.0:1,
+ * white on bumper 5.2:1, white on plate-blue 6.5:1, plate-blue on chalk 5.6:1,
+ * steel on plate-yellow 8.0:1. Yellow is never used as text on chalk.
+ */
+@theme {
+  --color-chalk: #edefea;
+  --color-steel: #1f2b33;
+  --color-rubber: #5c6670;
+  --color-bumper: #c9372c;
+  --color-plate-blue: #2c5da9;
+  --color-plate-yellow: #e8b634;
 
-* {
-  box-sizing: border-box;
+  /* Neutral tints derived from the palette */
+  --color-paper: #f7f8f5;
+  --color-hairline: #cfd4cd;
+  --color-sunken: #e1e4de;
+  --color-bumper-deep: #a82c22;
+  --color-plate-blue-deep: #234a88;
+  --color-plate-blue-wash: #d9e3f2;
+  --color-plate-yellow-wash: #f8ecc4;
+
+  --font-sans: var(--font-barlow), system-ui, sans-serif;
+  --font-display: var(--font-barlow-condensed), "Arial Narrow", sans-serif;
+
+  --text-meta: 13px;
+  --text-meta--line-height: 18px;
+  --text-body: 15px;
+  --text-body--line-height: 22px;
+  --text-lead: 17px;
+  --text-lead--line-height: 24px;
+  --text-title: 22px;
+  --text-title--line-height: 28px;
+  --text-heading: 30px;
+  --text-heading--line-height: 34px;
+  --text-numeral: 44px;
+  --text-numeral--line-height: 48px;
+
+  /* 6px for inputs and sheets only. Everything else is square. */
+  --radius-field: 6px;
+
+  --animate-sheet-in: sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-fade-in: fade-in 160ms ease-out;
+
+  @keyframes sheet-in {
+    from {
+      transform: translateY(24px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
 }
 
 html {
-  min-height: 100%;
-  background: var(--background);
+  background: var(--color-chalk);
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-chalk);
+  color: var(--color-steel);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 22px;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button,
 input,
 select {
   font: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-plate-blue);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
