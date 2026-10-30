@@ -23,3 +23,6 @@ docs/plans/
 .DS_Store
 *.log
 *.tsbuildinfo
+
+# Agent worktrees
+.claude/worktrees/
