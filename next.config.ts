@@ -1,7 +1,21 @@
 import type { NextConfig } from "next";
 
-const developmentScriptSource =
-  process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
+const scriptSrc = ["'self'", "'unsafe-inline'"];
+// React dev tooling needs eval; never allowed in production.
+if (process.env.NODE_ENV === "development") scriptSrc.push("'unsafe-eval'");
+
+const csp: Record<string, string[]> = {
+  "default-src": ["'self'"],
+  "base-uri": ["'self'"],
+  "frame-ancestors": ["'none'"],
+  "form-action": ["'self'"],
+  "object-src": ["'none'"],
+  "script-src": scriptSrc,
+  "style-src": ["'self'", "'unsafe-inline'"],
+};
+const contentSecurityPolicy = Object.entries(csp)
+  .map(([directive, sources]) => `${directive} ${sources.join(" ")}`)
+  .join("; ");
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -20,10 +34,7 @@ const nextConfig: NextConfig = {
         { key: "Referrer-Policy", value: "same-origin" },
         {
           key: "Content-Security-Policy",
-          value:
-            "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline'" +
-            developmentScriptSource +
-            "; style-src 'self' 'unsafe-inline'",
+          value: contentSecurityPolicy,
         },
       ],
     },

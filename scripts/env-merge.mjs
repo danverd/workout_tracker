@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { parseEnv } from "node:util";
 
 const GENERATED = {
   SESSION_SECRET: () => randomBytes(32).toString("hex"),
@@ -6,7 +7,12 @@ const GENERATED = {
   APP_TIME_ZONE: () => "America/New_York",
 };
 
-const keyOf = (line) => /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line)?.[1];
+// Uses util.parseEnv (Node >= 20.12) so `export KEY=...` and quoted values
+// count as present while comments do not.
+const keyOf = (line) => Object.keys(parseEnv(line))[0];
+
+const splitLines = (text) =>
+  text === "" ? [] : text.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n");
 
 /**
  * Pure merge of an existing .env.local text. Existing lines stay untouched;
@@ -18,7 +24,7 @@ export function mergeEnv(
   existing,
   { passcodeHash = null, generate = GENERATED } = {},
 ) {
-  const lines = existing === "" ? [] : existing.replace(/\n$/, "").split("\n");
+  const lines = splitLines(existing);
   const present = new Set(lines.map(keyOf).filter(Boolean));
   const added = [];
   const replaced = [];
@@ -44,5 +50,5 @@ export function mergeEnv(
 }
 
 export function hasKey(existing, key) {
-  return existing.split("\n").some((line) => keyOf(line) === key);
+  return splitLines(existing).some((line) => keyOf(line) === key);
 }

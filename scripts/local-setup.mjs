@@ -2,6 +2,7 @@ import { randomBytes, scryptSync } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { Writable } from "node:stream";
 
 import { hasKey, mergeEnv } from "./env-merge.mjs";
 
@@ -13,16 +14,20 @@ const needPasscode = resetPasscode || !hasKey(existing, "APP_PASSCODE_HASH");
 
 const interactive = Boolean(process.stdin.isTTY);
 let muted = false;
+// readline echoes typed characters to `output`. This sink forwards everything
+// to stdout except while muted (passcode entry on a TTY), so the prompt text
+// stays visible but the typed characters are never echoed.
+const output = new Writable({
+  write(chunk, _encoding, callback) {
+    if (!muted) process.stdout.write(chunk);
+    callback();
+  },
+});
 const rl = createInterface({
   input: process.stdin,
-  output: process.stdout,
+  output,
   terminal: interactive,
 });
-// Hide typed characters (but not the prompt) when attached to a terminal.
-const writeOutput = rl._writeToOutput?.bind(rl);
-rl._writeToOutput = (text) => {
-  if (!muted) writeOutput?.(text);
-};
 const lines = rl[Symbol.asyncIterator]();
 
 async function ask(question) {

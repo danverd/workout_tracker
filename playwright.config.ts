@@ -16,10 +16,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: "list",
-  timeout: 120_000,
-  // The dev server compiles each route on first hit, so allow slow first loads.
-  expect: { timeout: 20_000 },
-  retries: 1,
+  timeout: 60_000,
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: "retain-on-failure",
@@ -34,10 +31,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npx next dev --webpack -p ${PORT}`,
+    // Production build, so tests exercise what ships (no on-demand compiling).
+    command: `npx next build --webpack && npx next start -p ${PORT}`,
     url: `http://localhost:${PORT}/login`,
     reuseExistingServer: false,
-    timeout: 120_000,
+    timeout: 300_000,
     env: {
       PGLITE_DATA_DIR: ".data/e2e",
       APP_PASSCODE_HASH: passcodeHash,
