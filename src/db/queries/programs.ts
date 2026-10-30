@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { asc, count, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { HttpError } from "@/lib/http";
 import type { Database } from "@/db/client";
 import * as s from "@/db/schema";
@@ -31,7 +31,9 @@ export interface ProgramSummaryDto {
 
 type Executor = Pick<Database, "select" | "insert" | "update" | "delete">;
 
-function toSlotDto(row: typeof s.programSlots.$inferSelect): ProgramSlotDto {
+export function toSlotDto(
+  row: typeof s.programSlots.$inferSelect,
+): ProgramSlotDto {
   return {
     id: row.id,
     position: row.position,
@@ -101,17 +103,23 @@ export async function listPrograms(
   { includeArchived = false } = {},
 ): Promise<ProgramSummaryDto[]> {
   const [programs, days, slotCounts, activeId] = await Promise.all([
-    db.select().from(s.programs).orderBy(asc(s.programs.createdAt)),
-    db.select().from(s.programDays).orderBy(asc(s.programDays.position)),
     db
-      .select({ programId: s.programDays.programId, n: sql<number>`count(*)` })
+      .select()
+      .from(s.programs)
+      .where(includeArchived ? undefined : isNull(s.programs.archivedAt))
+      .orderBy(asc(s.programs.createdAt)),
+    db
+      .select({ programId: s.programDays.programId, name: s.programDays.name })
+      .from(s.programDays)
+      .orderBy(asc(s.programDays.position)),
+    db
+      .select({ programId: s.programDays.programId, n: count() })
       .from(s.programSlots)
       .innerJoin(s.programDays, eq(s.programSlots.dayId, s.programDays.id))
       .groupBy(s.programDays.programId),
     getActiveProgramId(db),
   ]);
   return programs
-    .filter((p) => includeArchived || p.archivedAt === null)
     .map((p) => ({
       id: p.id,
       name: p.name,
@@ -124,10 +132,11 @@ export async function listPrograms(
 }
 
 export async function countArchivedPrograms(db: Database) {
-  const rows = await db
-    .select({ archivedAt: s.programs.archivedAt })
-    .from(s.programs);
-  return rows.filter((r) => r.archivedAt !== null).length;
+  const [row] = await db
+    .select({ n: count() })
+    .from(s.programs)
+    .where(isNotNull(s.programs.archivedAt));
+  return row?.n ?? 0;
 }
 
 /** Movements and live exercises offered by the slot picker. */

@@ -1,5 +1,17 @@
-import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  inArray,
+  isNotNull,
+  ne,
+  sql,
+} from "drizzle-orm";
 import type { Database } from "@/db/client";
+import { toExerciseDto, toLocationDto } from "@/db/queries/setup";
+import { toSlotDto } from "@/db/queries/programs";
 import { HttpError } from "@/lib/http";
 import * as s from "@/db/schema";
 import { todayInAppTimeZone } from "@/lib/dates";
@@ -12,6 +24,8 @@ import type {
   SessionSetInput,
 } from "@/lib/validation/sessions";
 import type {
+  CardioEntryDto,
+  DistanceUnit,
   ExerciseDto,
   LastSetDto,
   LoadType,
@@ -22,7 +36,6 @@ import type {
   SessionExerciseDto,
   SessionHeaderDto,
   SessionSetDto,
-  SetTarget,
   SettingsDto,
 } from "@/types/domain";
 
@@ -87,6 +100,19 @@ function exerciseFrom(
   };
 }
 
+export function toCardio(
+  row: typeof s.cardioEntries.$inferSelect | null | undefined,
+): CardioEntryDto | null {
+  return row
+    ? {
+        activity: row.activity,
+        durationSec: row.durationSec,
+        distance: row.distance,
+        distanceUnit: row.distanceUnit as DistanceUnit | null,
+      }
+    : null;
+}
+
 // ---- Reading a session ------------------------------------------------------
 
 async function sessionRow(db: Executor, id: string) {
@@ -98,48 +124,43 @@ export async function getSession(
   db: Executor,
   id: string,
 ): Promise<SessionDto | null> {
-  const row = await sessionRow(db, id);
-  if (!row) return null;
-  const [exerciseRows, cardioRows] = await Promise.all([
+  const [[row], exerciseRows, cardioRows, setRows] = await Promise.all([
+    db.select().from(s.sessions).where(eq(s.sessions.id, id)),
     db
       .select()
       .from(s.sessionExercises)
       .where(eq(s.sessionExercises.sessionId, id))
       .orderBy(asc(s.sessionExercises.position)),
     db.select().from(s.cardioEntries).where(eq(s.cardioEntries.sessionId, id)),
+    db
+      .select(getTableColumns(s.sessionSets))
+      .from(s.sessionSets)
+      .innerJoin(
+        s.sessionExercises,
+        eq(s.sessionSets.sessionExerciseId, s.sessionExercises.id),
+      )
+      .where(eq(s.sessionExercises.sessionId, id))
+      .orderBy(asc(s.sessionSets.position)),
   ]);
-  const setRows = exerciseRows.length
-    ? await db
-        .select()
-        .from(s.sessionSets)
-        .where(
-          inArray(
-            s.sessionSets.sessionExerciseId,
-            exerciseRows.map((exercise) => exercise.id),
-          ),
-        )
-        .orderBy(asc(s.sessionSets.position))
-    : [];
-  const cardio = cardioRows[0];
+  if (!row) return null;
+  const setsByExercise = groupSets(setRows);
   return {
     ...headerFrom(row),
     exercises: exerciseRows.map((exercise) =>
-      exerciseFrom(
-        exercise,
-        setRows
-          .filter((set) => set.sessionExerciseId === exercise.id)
-          .map(setFrom),
-      ),
+      exerciseFrom(exercise, setsByExercise.get(exercise.id) ?? []),
     ),
-    cardio: cardio
-      ? {
-          activity: cardio.activity,
-          durationSec: cardio.durationSec,
-          distance: cardio.distance,
-          distanceUnit: cardio.distanceUnit as "mi" | "km" | null,
-        }
-      : null,
+    cardio: toCardio(cardioRows[0]),
   };
+}
+
+function groupSets(rows: (typeof s.sessionSets.$inferSelect)[]) {
+  const byExercise = new Map<string, SessionSetDto[]>();
+  for (const row of rows) {
+    const list = byExercise.get(row.sessionExerciseId) ?? [];
+    list.push(setFrom(row));
+    byExercise.set(row.sessionExerciseId, list);
+  }
+  return byExercise;
 }
 
 // ---- Writing ----------------------------------------------------------------
@@ -180,24 +201,29 @@ export async function upsertSessionExercise(
   sessionId: string,
   input: SessionExerciseInput,
 ): Promise<SessionExerciseDto> {
-  if (!(await sessionRow(db, sessionId)))
-    throw new SessionQueryError(404, "Session not found.");
-  const [existing] = await db
-    .select()
-    .from(s.sessionExercises)
-    .where(eq(s.sessionExercises.id, input.id));
+  const [[session], [existing], [slot], [exercise]] = await Promise.all([
+    db
+      .select({ id: s.sessions.id })
+      .from(s.sessions)
+      .where(eq(s.sessions.id, sessionId)),
+    db
+      .select()
+      .from(s.sessionExercises)
+      .where(eq(s.sessionExercises.id, input.id)),
+    input.slotId
+      ? db
+          .select({ id: s.programSlots.id })
+          .from(s.programSlots)
+          .where(eq(s.programSlots.id, input.slotId))
+      : Promise.resolve([]),
+    db.select().from(s.exercises).where(eq(s.exercises.id, input.exerciseId)),
+  ]);
+  if (!session) throw new SessionQueryError(404, "Session not found.");
   if (existing && existing.sessionId !== sessionId)
     throw new SessionQueryError(409, "Exercise id belongs to another session.");
 
   // A program slot deleted since the preview loaded is simply dropped.
-  let slotId = input.slotId;
-  if (slotId) {
-    const [slot] = await db
-      .select({ id: s.programSlots.id })
-      .from(s.programSlots)
-      .where(eq(s.programSlots.id, slotId));
-    if (!slot) slotId = null;
-  }
+  const slotId = slot ? input.slotId : null;
 
   if (existing) {
     const [row] = await db
@@ -208,10 +234,6 @@ export async function upsertSessionExercise(
     return exerciseFrom(row, await setsOf(db, row.id));
   }
 
-  const [exercise] = await db
-    .select()
-    .from(s.exercises)
-    .where(eq(s.exercises.id, input.exerciseId));
   if (!exercise) throw new SessionQueryError(404, "Exercise not found.");
   const [row] = await db
     .insert(s.sessionExercises)
@@ -236,24 +258,31 @@ export async function upsertSet(
   sessionExerciseId: string,
   input: SessionSetInput,
 ): Promise<SessionSetDto> {
-  const [exercise] = await db
-    .select()
-    .from(s.sessionExercises)
-    .where(
-      and(
-        eq(s.sessionExercises.id, sessionExerciseId),
-        eq(s.sessionExercises.sessionId, sessionId),
+  const [[exercise], [session], [existing]] = await Promise.all([
+    db
+      .select({
+        loadType: s.sessionExercises.loadType,
+        baseWeight: s.sessionExercises.baseWeight,
+      })
+      .from(s.sessionExercises)
+      .where(
+        and(
+          eq(s.sessionExercises.id, sessionExerciseId),
+          eq(s.sessionExercises.sessionId, sessionId),
+        ),
       ),
-    );
+    db
+      .select({ bodyweightLb: s.sessions.bodyweightLb })
+      .from(s.sessions)
+      .where(eq(s.sessions.id, sessionId)),
+    db
+      .select({ sessionExerciseId: s.sessionSets.sessionExerciseId })
+      .from(s.sessionSets)
+      .where(eq(s.sessionSets.id, input.id)),
+  ]);
   if (!exercise)
     throw new SessionQueryError(404, "Session exercise not found.");
-  const session = await sessionRow(db, sessionId);
   if (!session) throw new SessionQueryError(404, "Session not found.");
-
-  const [existing] = await db
-    .select({ sessionExerciseId: s.sessionSets.sessionExerciseId })
-    .from(s.sessionSets)
-    .where(eq(s.sessionSets.id, input.id));
   if (existing && existing.sessionExerciseId !== sessionExerciseId)
     throw new SessionQueryError(409, "Set id belongs to another exercise.");
 
@@ -279,21 +308,25 @@ export async function upsertSet(
   return setFrom(row);
 }
 
+const excluded = (column: { name: string }) =>
+  sql.raw(`excluded."${column.name}"`);
+
 /**
  * Idempotent upsert of a strength session with its exercises and sets. An
- * existing session keeps its header, snapshots and bodyweight.
+ * existing session keeps its header, snapshots and bodyweight. Exercises and
+ * sets are written with one bulk statement each.
  */
 export async function createSession(
   db: Database,
   input: SessionCreateInput,
 ): Promise<SessionDto> {
   if (input.locationId) await assertLocation(db, input.locationId);
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const [settingsRow] = await tx
       .select({ bodyweightLb: s.settings.bodyweightLb })
       .from(s.settings)
       .where(eq(s.settings.id, 1));
-    await tx
+    const inserted = await tx
       .insert(s.sessions)
       .values({
         id: input.id,
@@ -308,17 +341,173 @@ export async function createSession(
         notes: input.notes,
         startedAt: input.startedAt ? new Date(input.startedAt) : new Date(),
       })
-      .onConflictDoNothing({ target: s.sessions.id });
-    for (const exercise of input.exercises) {
-      await upsertSessionExercise(tx, input.id, exercise);
-      for (const set of exercise.sets)
-        await upsertSet(tx, input.id, exercise.id, set);
-    }
+      .onConflictDoNothing({ target: s.sessions.id })
+      .returning();
+    const session = inserted[0] ?? (await sessionRow(tx, input.id))!;
+
+    // Later duplicates of an id win, as they did when written one by one.
+    const exercises = [
+      ...new Map(input.exercises.map((e) => [e.id, e])).values(),
+    ];
+    const sets = [
+      ...new Map(
+        exercises.flatMap((e) =>
+          e.sets.map((set) => [set.id, { exerciseId: e.id, set }] as const),
+        ),
+      ).values(),
+    ];
+    const requestedSlotIds = exercises.flatMap((e) =>
+      e.slotId ? [e.slotId] : [],
+    );
+    const [existingExercises, exerciseDefs, slots, existingSets] =
+      exercises.length
+        ? await Promise.all([
+            tx
+              .select()
+              .from(s.sessionExercises)
+              .where(
+                inArray(
+                  s.sessionExercises.id,
+                  exercises.map((e) => e.id),
+                ),
+              ),
+            tx
+              .select()
+              .from(s.exercises)
+              .where(
+                inArray(s.exercises.id, [
+                  ...new Set(exercises.map((e) => e.exerciseId)),
+                ]),
+              ),
+            requestedSlotIds.length
+              ? tx
+                  .select({ id: s.programSlots.id })
+                  .from(s.programSlots)
+                  .where(inArray(s.programSlots.id, requestedSlotIds))
+              : Promise.resolve([]),
+            sets.length
+              ? tx
+                  .select({
+                    id: s.sessionSets.id,
+                    sessionExerciseId: s.sessionSets.sessionExerciseId,
+                  })
+                  .from(s.sessionSets)
+                  .where(
+                    inArray(
+                      s.sessionSets.id,
+                      sets.map((x) => x.set.id),
+                    ),
+                  )
+              : Promise.resolve([]),
+          ])
+        : [[], [], [], []];
+
+    const existingById = new Map(existingExercises.map((e) => [e.id, e]));
+    const defById = new Map(exerciseDefs.map((e) => [e.id, e]));
+    const slotIds = new Set(slots.map((slot) => slot.id));
+    const setOwner = new Map(
+      existingSets.map((x) => [x.id, x.sessionExerciseId]),
+    );
+
+    const exerciseValues = exercises.map((e) => {
+      const existing = existingById.get(e.id);
+      if (existing && existing.sessionId !== input.id)
+        throw new SessionQueryError(
+          409,
+          "Exercise id belongs to another session.",
+        );
+      const def = defById.get(e.exerciseId);
+      if (!existing && !def)
+        throw new SessionQueryError(404, "Exercise not found.");
+      const snapshot = existing ?? {
+        exerciseId: def!.id,
+        name: def!.name,
+        loadType: def!.loadType,
+        baseWeight: def!.baseWeight,
+      };
+      return {
+        id: e.id,
+        sessionId: input.id,
+        exerciseId: snapshot.exerciseId,
+        slotId: e.slotId && slotIds.has(e.slotId) ? e.slotId : null,
+        position: e.position,
+        name: snapshot.name,
+        loadType: snapshot.loadType,
+        baseWeight: snapshot.baseWeight,
+      };
+    });
+    const exerciseRows = exerciseValues.length
+      ? await tx
+          .insert(s.sessionExercises)
+          .values(exerciseValues)
+          .onConflictDoUpdate({
+            target: s.sessionExercises.id,
+            set: {
+              position: excluded(s.sessionExercises.position),
+              slotId: excluded(s.sessionExercises.slotId),
+            },
+          })
+          .returning()
+      : [];
+    const rowById = new Map(exerciseRows.map((row) => [row.id, row]));
+
+    const setValues = sets.map(({ exerciseId, set }) => {
+      const owner = setOwner.get(set.id);
+      if (owner && owner !== exerciseId)
+        throw new SessionQueryError(409, "Set id belongs to another exercise.");
+      const exercise = rowById.get(exerciseId)!;
+      return {
+        id: set.id,
+        sessionExerciseId: exerciseId,
+        position: set.position,
+        weight: set.weight,
+        reps: set.reps,
+        done: set.done,
+        volume: setVolume({
+          loadType: exercise.loadType as LoadType,
+          baseWeight: exercise.baseWeight,
+          bodyweightLb: session.bodyweightLb,
+          weight: set.weight,
+          reps: set.reps,
+          done: set.done,
+        }),
+      };
+    });
+    const setRows = setValues.length
+      ? await tx
+          .insert(s.sessionSets)
+          .values(setValues)
+          .onConflictDoUpdate({
+            target: s.sessionSets.id,
+            set: {
+              position: excluded(s.sessionSets.position),
+              weight: excluded(s.sessionSets.weight),
+              reps: excluded(s.sessionSets.reps),
+              done: excluded(s.sessionSets.done),
+              volume: excluded(s.sessionSets.volume),
+            },
+          })
+          .returning()
+      : [];
     if (input.locationId) await rememberLocation(tx, input.locationId);
+
+    // A replay onto an existing session may hold more than this payload.
+    if (!inserted[0]) {
+      const full = await getSession(tx, input.id);
+      if (!full) throw new SessionQueryError(500, "Session was not saved.");
+      return full;
+    }
+    const setsByExercise = groupSets(
+      setRows.sort((a, b) => a.position - b.position),
+    );
+    return {
+      ...headerFrom(session),
+      exercises: exerciseRows
+        .sort((a, b) => a.position - b.position)
+        .map((row) => exerciseFrom(row, setsByExercise.get(row.id) ?? [])),
+      cardio: null,
+    };
   });
-  const created = await getSession(db, input.id);
-  if (!created) throw new SessionQueryError(500, "Session was not saved.");
-  return created;
 }
 
 export async function patchSession(
@@ -443,6 +632,37 @@ export async function loadCatalog(
 ): Promise<SessionCatalog> {
   const exclude = options.excludeSessionId;
 
+  const doneSetOf = (sessionExerciseId: typeof s.sessionExercises.id) =>
+    sql`exists (select 1 from ${s.sessionSets} where ${s.sessionSets.sessionExerciseId} = ${sessionExerciseId} and ${s.sessionSets.done})`;
+  const inScope = (excludeId: typeof s.sessions.id) =>
+    and(
+      eq(s.sessions.kind, "strength"),
+      exclude ? ne(excludeId, exclude) : undefined,
+    );
+
+  // Newest session-exercise per exercise that has a done set.
+  const latest = db
+    .selectDistinctOn([s.sessionExercises.exerciseId], {
+      exerciseId: s.sessionExercises.exerciseId,
+      sessionExerciseId: s.sessionExercises.id,
+    })
+    .from(s.sessionExercises)
+    .innerJoin(s.sessions, eq(s.sessionExercises.sessionId, s.sessions.id))
+    .where(
+      and(
+        isNotNull(s.sessionExercises.exerciseId),
+        inScope(s.sessions.id),
+        doneSetOf(s.sessionExercises.id),
+      ),
+    )
+    .orderBy(
+      s.sessionExercises.exerciseId,
+      desc(s.sessions.date),
+      desc(s.sessions.startedAt),
+      asc(s.sessionExercises.id),
+    )
+    .as("latest");
+
   const [
     locationRows,
     locationEquipmentRows,
@@ -453,7 +673,8 @@ export async function loadCatalog(
     dayRows,
     slotRows,
     settingsRows,
-    doneSets,
+    lastSetRows,
+    usageRows,
     programSessions,
   ] = await Promise.all([
     db
@@ -477,83 +698,69 @@ export async function loadCatalog(
     db.select().from(s.programDays).orderBy(asc(s.programDays.position)),
     db.select().from(s.programSlots).orderBy(asc(s.programSlots.position)),
     db.select().from(s.settings).where(eq(s.settings.id, 1)),
+    // Done sets of those latest session-exercises, already in set order.
     db
       .select({
-        exerciseId: s.sessionExercises.exerciseId,
-        sessionExerciseId: s.sessionExercises.id,
-        locationId: s.sessions.locationId,
-        startedAt: s.sessions.startedAt,
+        exerciseId: latest.exerciseId,
         position: s.sessionSets.position,
         weight: s.sessionSets.weight,
         reps: s.sessionSets.reps,
       })
-      .from(s.sessionSets)
+      .from(latest)
       .innerJoin(
-        s.sessionExercises,
-        eq(s.sessionSets.sessionExerciseId, s.sessionExercises.id),
+        s.sessionSets,
+        eq(s.sessionSets.sessionExerciseId, latest.sessionExerciseId),
       )
+      .where(eq(s.sessionSets.done, true))
+      .orderBy(asc(s.sessionSets.position)),
+    // Last done time per exercise and location.
+    db
+      .select({
+        exerciseId: s.sessionExercises.exerciseId,
+        locationId: s.sessions.locationId,
+        lastAt: sql<Date>`max(${s.sessions.startedAt})`.mapWith(
+          s.sessions.startedAt,
+        ),
+      })
+      .from(s.sessionExercises)
       .innerJoin(s.sessions, eq(s.sessionExercises.sessionId, s.sessions.id))
       .where(
         and(
-          eq(s.sessionSets.done, true),
           isNotNull(s.sessionExercises.exerciseId),
-          eq(s.sessions.kind, "strength"),
-          exclude ? ne(s.sessions.id, exclude) : undefined,
+          inScope(s.sessions.id),
+          doneSetOf(s.sessionExercises.id),
         ),
       )
-      .orderBy(
-        desc(s.sessions.date),
-        desc(s.sessions.startedAt),
-        asc(s.sessionSets.position),
-      ),
+      .groupBy(s.sessionExercises.exerciseId, s.sessions.locationId),
+    // Newest session with a done set per program: all rotation needs.
     db
-      .select({
+      .selectDistinctOn([s.sessions.programId], {
         programId: s.sessions.programId,
         programDayId: s.sessions.programDayId,
         date: s.sessions.date,
         startedAt: s.sessions.startedAt,
-        doneSetCount:
-          sql<number>`count(${s.sessionSets.id}) filter (where ${s.sessionSets.done})`.mapWith(
-            Number,
-          ),
       })
       .from(s.sessions)
-      .leftJoin(
-        s.sessionExercises,
-        eq(s.sessionExercises.sessionId, s.sessions.id),
-      )
-      .leftJoin(
-        s.sessionSets,
-        eq(s.sessionSets.sessionExerciseId, s.sessionExercises.id),
-      )
       .where(
-        and(isNotNull(s.sessions.programId), eq(s.sessions.kind, "strength")),
+        and(
+          isNotNull(s.sessions.programId),
+          eq(s.sessions.kind, "strength"),
+          sql`exists (select 1 from ${s.sessionExercises} join ${s.sessionSets} on ${s.sessionSets.sessionExerciseId} = ${s.sessionExercises.id} where ${s.sessionExercises.sessionId} = ${s.sessions.id} and ${s.sessionSets.done})`,
+        ),
       )
-      .groupBy(s.sessions.id),
+      .orderBy(
+        s.sessions.programId,
+        desc(s.sessions.date),
+        desc(s.sessions.startedAt),
+      ),
   ]);
 
-  const locations: LocationDto[] = locationRows.map((location) => ({
-    id: location.id,
-    name: location.name,
-    archived: false,
-    equipment: locationEquipmentRows
-      .filter((row) => row.locationId === location.id)
-      .map((row) => ({ equipmentId: row.equipmentId, weights: row.weights })),
-  }));
-
-  const exercises: ExerciseDto[] = exerciseRows.map((exercise) => ({
-    id: exercise.id,
-    name: exercise.name,
-    movementId: exercise.movementId,
-    loadType: exercise.loadType as LoadType,
-    baseWeight: exercise.baseWeight,
-    weightEquipmentId: exercise.weightEquipmentId,
-    increment: exercise.increment,
-    archived: false,
-    equipmentIds: exerciseEquipmentRows
-      .filter((row) => row.exerciseId === exercise.id)
-      .map((row) => row.equipmentId),
-  }));
+  const locations = locationRows.map((row) =>
+    toLocationDto(row, locationEquipmentRows),
+  );
+  const exercises = exerciseRows.map((row) =>
+    toExerciseDto(row, exerciseEquipmentRows),
+  );
 
   const programs: ProgramDto[] = programRows.map((program) => ({
     id: program.id,
@@ -565,19 +772,7 @@ export async function loadCatalog(
         id: day.id,
         name: day.name,
         position: day.position,
-        slots: slotRows
-          .filter((slot) => slot.dayId === day.id)
-          .map((slot) => ({
-            id: slot.id,
-            position: slot.position,
-            movementId: slot.movementId,
-            exerciseId: slot.exerciseId,
-            sets: slot.targetSets,
-            repMin: slot.repMin,
-            repMax: slot.repMax,
-            amrap: slot.amrap,
-            notes: slot.notes,
-          })),
+        slots: slotRows.filter((slot) => slot.dayId === day.id).map(toSlotDto),
       })),
   }));
 
@@ -600,11 +795,35 @@ export async function loadCatalog(
             programDayId: row.programDayId,
             date: row.date,
             startedAt: iso(row.startedAt),
-            doneSetCount: row.doneSetCount,
+            // The query only returns sessions that have a done set.
+            doneSetCount: 1,
           })),
       ),
     ]),
   );
+
+  const lastUsedAnywhere: Record<string, string> = {};
+  const lastUsedByLocation: Record<string, Record<string, string>> = {};
+  for (const row of usageRows) {
+    if (!row.exerciseId) continue;
+    const when = iso(row.lastAt);
+    if (
+      !lastUsedAnywhere[row.exerciseId] ||
+      when > lastUsedAnywhere[row.exerciseId]
+    )
+      lastUsedAnywhere[row.exerciseId] = when;
+    if (row.locationId)
+      (lastUsedByLocation[row.locationId] ??= {})[row.exerciseId] = when;
+  }
+  const lastSets: Record<string, LastSetDto[]> = {};
+  for (const row of lastSetRows) {
+    if (!row.exerciseId) continue;
+    (lastSets[row.exerciseId] ??= []).push({
+      position: row.position,
+      weight: row.weight,
+      reps: row.reps,
+    });
+  }
 
   return {
     locations,
@@ -613,64 +832,8 @@ export async function loadCatalog(
     programs,
     settings,
     nextDayByProgram,
-    ...usageFrom(doneSets),
+    lastUsedAnywhere,
+    lastUsedByLocation,
+    lastSets,
   };
-}
-
-/** Rows arrive newest session first, then by set position. */
-function usageFrom(
-  rows: {
-    exerciseId: string | null;
-    sessionExerciseId: string;
-    locationId: string | null;
-    startedAt: Date;
-    position: number;
-    weight: number;
-    reps: number | null;
-  }[],
-) {
-  const lastUsedAnywhere: Record<string, string> = {};
-  const lastUsedByLocation: Record<string, Record<string, string>> = {};
-  const lastSets: Record<string, LastSetDto[]> = {};
-  const lastSessionExercise: Record<string, string> = {};
-  for (const row of rows) {
-    if (!row.exerciseId) continue;
-    const when = iso(row.startedAt);
-    lastUsedAnywhere[row.exerciseId] ??= when;
-    if (row.locationId) {
-      const here = (lastUsedByLocation[row.locationId] ??= {});
-      here[row.exerciseId] ??= when;
-    }
-    lastSessionExercise[row.exerciseId] ??= row.sessionExerciseId;
-    if (lastSessionExercise[row.exerciseId] === row.sessionExerciseId)
-      (lastSets[row.exerciseId] ??= []).push({
-        position: row.position,
-        weight: row.weight,
-        reps: row.reps,
-      });
-  }
-  return { lastUsedAnywhere, lastUsedByLocation, lastSets };
-}
-
-/** Targets of the program slots a session's exercises came from. */
-export async function loadSlotTargets(
-  db: Database,
-  slotIds: string[],
-): Promise<Record<string, SetTarget>> {
-  if (slotIds.length === 0) return {};
-  const rows = await db
-    .select()
-    .from(s.programSlots)
-    .where(inArray(s.programSlots.id, slotIds));
-  return Object.fromEntries(
-    rows.map((slot) => [
-      slot.id,
-      {
-        sets: slot.targetSets,
-        repMin: slot.repMin,
-        repMax: slot.repMax,
-        amrap: slot.amrap,
-      },
-    ]),
-  );
 }

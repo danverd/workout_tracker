@@ -191,7 +191,7 @@ export const sessions = pgTable(
       sql`${t.date} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`,
     ),
     check("sessions_bodyweight_check", sql`${t.bodyweightLb} >= 0`),
-    index("sessions_date_idx").on(t.date),
+    index("sessions_date_idx").on(t.date, t.startedAt),
     index("sessions_program_idx").on(t.programId, t.startedAt),
   ],
 );
@@ -247,6 +247,9 @@ export const sessionSets = pgTable(
     check("session_sets_reps_check", sql`${t.reps} is null or ${t.reps} >= 0`),
     check("session_sets_volume_check", sql`${t.volume} >= 0`),
     index("session_sets_exercise_idx").on(t.sessionExerciseId, t.position),
+    index("session_sets_done_idx")
+      .on(t.sessionExerciseId)
+      .where(sql`${t.done}`),
   ],
 );
 
@@ -295,10 +298,19 @@ export const settings = pgTable(
   ],
 );
 
-export const failedPasscodeAttempts = pgTable("failed_passcode_attempts", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  identifierHash: text("identifier_hash").notNull(),
-  attemptedAt: timestamp("attempted_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const failedPasscodeAttempts = pgTable(
+  "failed_passcode_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    identifierHash: text("identifier_hash").notNull(),
+    attemptedAt: timestamp("attempted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("failed_passcode_attempts_identifier_idx").on(
+      t.identifierHash,
+      t.attemptedAt,
+    ),
+  ],
+);

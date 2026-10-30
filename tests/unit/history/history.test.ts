@@ -229,6 +229,30 @@ describe("exercise history", () => {
     expect(await getExerciseHistory(db, randomUUID())).toBeNull();
   });
 
+  it("respects limit but still finds a best set older than the page", async () => {
+    const [ex] = await db
+      .insert(s.exercises)
+      .values({ id: randomUUID(), name: "Limit press", loadType: "total" })
+      .returning();
+    const dates = ["2022-01-01", "2022-01-08", "2022-01-15", "2022-01-22"];
+    for (const [index, date] of dates.entries())
+      await insertStrength(db, {
+        date,
+        exercises: [
+          {
+            exerciseId: ex.id,
+            sets: [done(index === 0 ? 300 : 100, 5)],
+          },
+        ],
+      });
+    const history = await getExerciseHistory(db, ex.id, 2);
+    expect(history?.sessions.map((x) => x.date)).toEqual([
+      "2022-01-22",
+      "2022-01-15",
+    ]);
+    expect(history?.bestSet).toMatchObject({ date: "2022-01-01", weight: 300 });
+  });
+
   it("session detail returns exercises and sets", async () => {
     const id = await insertStrength(db, {
       date: "2022-01-01",

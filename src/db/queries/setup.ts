@@ -139,6 +139,44 @@ export async function listMovements(
   }));
 }
 
+/** `links` may hold other locations' rows; only this location's are used. */
+export function toLocationDto(
+  row: typeof s.locations.$inferSelect,
+  links: (typeof s.locationEquipment.$inferSelect)[],
+): LocationDto {
+  return {
+    id: row.id,
+    name: row.name,
+    archived: row.archivedAt !== null,
+    equipment: links
+      .filter((link) => link.locationId === row.id)
+      .map((link) => ({
+        equipmentId: link.equipmentId,
+        weights: link.weights,
+      })),
+  };
+}
+
+/** `links` may hold other exercises' rows; only this exercise's are used. */
+export function toExerciseDto(
+  row: typeof s.exercises.$inferSelect,
+  links: (typeof s.exerciseEquipment.$inferSelect)[],
+): ExerciseDto {
+  return {
+    id: row.id,
+    name: row.name,
+    movementId: row.movementId,
+    loadType: row.loadType as LoadType,
+    baseWeight: row.baseWeight,
+    weightEquipmentId: row.weightEquipmentId,
+    increment: row.increment,
+    archived: row.archivedAt !== null,
+    equipmentIds: links
+      .filter((link) => link.exerciseId === row.id)
+      .map((link) => link.equipmentId),
+  };
+}
+
 export async function listLocations(
   db: Database,
   onlyId?: string,
@@ -160,16 +198,8 @@ export async function listLocations(
   ]);
   const sessionCounts = countMap(sessionRows);
   return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    archived: row.archivedAt !== null,
+    ...toLocationDto(row, equipmentRows),
     sessionCount: sessionCounts.get(row.id) ?? 0,
-    equipment: equipmentRows
-      .filter((link) => link.locationId === row.id)
-      .map((link) => ({
-        equipmentId: link.equipmentId,
-        weights: link.weights,
-      })),
   }));
 }
 
@@ -203,17 +233,7 @@ export async function listExercises(
   const sessions = countMap(inSessions);
   const slots = countMap(inSlots);
   return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    movementId: row.movementId,
-    loadType: row.loadType as LoadType,
-    baseWeight: row.baseWeight,
-    weightEquipmentId: row.weightEquipmentId,
-    increment: row.increment,
-    archived: row.archivedAt !== null,
-    equipmentIds: links
-      .filter((link) => link.exerciseId === row.id)
-      .map((link) => link.equipmentId),
+    ...toExerciseDto(row, links),
     usage: describeUsage([
       [sessions.get(row.id) ?? 0, "logged workout", "logged workouts"],
       [slots.get(row.id) ?? 0, "program slot", "program slots"],

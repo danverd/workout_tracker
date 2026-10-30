@@ -506,6 +506,29 @@ describe("loadCatalog (preview data)", () => {
     expect(catalog.lastSets[dumbbell][0].weight).toBe(40);
   });
 
+  it("returns only the newest session's sets with several older sessions", async () => {
+    const dumbbell = ids.exercise["Incline dumbbell press"];
+    for (const [day, weight] of [
+      ["01", 30],
+      ["05", 35],
+      ["12", 40],
+      ["20", 55],
+    ] as const) {
+      const entry = startInput({
+        startedAt: `2026-09-${day}T10:00:00.000Z`,
+        date: `2026-09-${day}`,
+      });
+      entry.input.exercises[0].sets = [set(0, weight, 10), set(1, weight, 8)];
+      await createSession(db, entry.input);
+    }
+    const catalog = await loadCatalog(db);
+    expect(catalog.lastSets[dumbbell]).toEqual([
+      { position: 0, weight: 55, reps: 10 },
+      { position: 1, weight: 55, reps: 8 },
+    ]);
+    expect(catalog.lastUsedAnywhere[dumbbell]).toBe("2026-09-20T10:00:00.000Z");
+  });
+
   it("omits archived locations and exercises", async () => {
     await db
       .update(s.exercises)

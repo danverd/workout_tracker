@@ -26,7 +26,7 @@ export default async function HistorySessionPage({
   if (!idSchema.safeParse(id).success) notFound();
   const detail = await getSessionDetail(await getDb(), id);
   if (!detail) notFound();
-  const { session, locationName } = detail;
+  const { session, locationName, doneSetCount, totalVolume } = detail;
   const isCardio = session.kind === "cardio";
 
   const exercises = session.exercises
@@ -35,12 +35,6 @@ export default async function HistorySessionPage({
       sets: exercise.sets.filter((set) => set.done),
     }))
     .filter((exercise) => exercise.sets.length > 0);
-  const totalVolume = exercises.reduce(
-    (sum, exercise) =>
-      sum + exercise.sets.reduce((inner, set) => inner + set.volume, 0),
-    0,
-  );
-  const doneSets = exercises.reduce((sum, e) => sum + e.sets.length, 0);
 
   return (
     <AppShell
@@ -88,7 +82,7 @@ export default async function HistorySessionPage({
                 {formatVolume(totalVolume)}
               </p>
               <p className="text-body text-rubber mt-1">
-                {plural(doneSets, "set")} done
+                {plural(doneSetCount, "set")} done
                 {session.finishedAt ? "" : " · not finished"}
               </p>
             </div>

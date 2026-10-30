@@ -1,7 +1,9 @@
 import { createHmac } from "node:crypto";
-import { and, count, eq, gt } from "drizzle-orm";
+import { and, count, eq, gt, lt } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { failedPasscodeAttempts } from "@/db/schema";
+
+const WINDOW_MS = 15 * 60_000;
 
 export function hashClientIdentifier(value: string) {
   const secret = process.env.IP_HASH_SECRET;
@@ -22,7 +24,7 @@ export async function tooManyAttempts(identifierHash: string) {
         eq(failedPasscodeAttempts.identifierHash, identifierHash),
         gt(
           failedPasscodeAttempts.attemptedAt,
-          new Date(Date.now() - 15 * 60_000),
+          new Date(Date.now() - WINDOW_MS),
         ),
       ),
     );
@@ -31,4 +33,10 @@ export async function tooManyAttempts(identifierHash: string) {
 export async function recordFailedAttempt(identifierHash: string) {
   const db = await getDb();
   await db.insert(failedPasscodeAttempts).values({ identifierHash });
+  // Attempts outside the window can no longer matter.
+  await db
+    .delete(failedPasscodeAttempts)
+    .where(
+      lt(failedPasscodeAttempts.attemptedAt, new Date(Date.now() - WINDOW_MS)),
+    );
 }

@@ -8,6 +8,13 @@
       "when": 1793369563303,
       "tag": "0000_elite_dormammu",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793378033866,
+      "tag": "0001_fine_bruce_banner",
+      "breakpoints": true
     }
   ]
 }

@@ -4,8 +4,10 @@ import {
   count,
   desc,
   eq,
+  gt,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lt,
   lte,
@@ -28,12 +30,11 @@ import type {
   SummaryResponseDto,
   TodayDataDto,
 } from "@/features/history/types";
+import { getSession, toCardio } from "@/db/queries/sessions";
 import type {
   CardioEntryDto,
-  DistanceUnit,
   ExerciseHistoryDto,
   LoadType,
-  SessionDto,
   SessionKind,
   SessionSummaryDto,
 } from "@/types/domain";
@@ -42,29 +43,65 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const hasDoneSet = sql`exists (select 1 from ${s.sessionExercises} join ${s.sessionSets} on ${s.sessionSets.sessionExerciseId} = ${s.sessionExercises.id} where ${s.sessionExercises.sessionId} = ${s.sessions.id} and ${s.sessionSets.done})`;
 
-function toCardio(
-  row: typeof s.cardioEntries.$inferSelect | null,
-): CardioEntryDto | null {
-  return row
-    ? {
-        activity: row.activity,
-        durationSec: row.durationSec,
-        distance: row.distance,
-        distanceUnit: row.distanceUnit as DistanceUnit | null,
-      }
-    : null;
+interface SummaryRow {
+  session: {
+    id: string;
+    date: string;
+    kind: string;
+    title: string;
+    dayName: string;
+    locationId: string | null;
+    startedAt: Date;
+    finishedAt: Date | null;
+  };
+  locationName: string | null;
+  cardio: CardioEntryDto | null;
+  exerciseCount: number;
+  doneSetCount: number;
+  volume: number;
 }
 
+function toSessionSummaryDto(row: SummaryRow): SessionSummaryDto {
+  const { session } = row;
+  return {
+    id: session.id,
+    date: session.date,
+    kind: session.kind as SessionKind,
+    title: session.title,
+    dayName: session.dayName,
+    locationId: session.locationId,
+    locationName: row.locationName,
+    startedAt: session.startedAt.toISOString(),
+    finishedAt: session.finishedAt?.toISOString() ?? null,
+    exerciseCount: Number(row.exerciseCount),
+    doneSetCount: Number(row.doneSetCount),
+    totalVolume: Number(row.volume),
+    cardio: row.cardio,
+  };
+}
+
+/** Sessions with their location, cardio entry and set totals in one query. */
 async function selectSummaries(
   db: Database,
   where: SQL | undefined,
   limit?: number,
 ): Promise<SessionSummaryDto[]> {
+  const doneSets = sql`from ${s.sessionSets} join ${s.sessionExercises} on ${s.sessionSets.sessionExerciseId} = ${s.sessionExercises.id} where ${s.sessionExercises.sessionId} = ${s.sessions.id} and ${s.sessionSets.done}`;
   const query = db
     .select({
-      session: s.sessions,
+      id: s.sessions.id,
+      date: s.sessions.date,
+      kind: s.sessions.kind,
+      title: s.sessions.title,
+      dayName: s.sessions.dayName,
+      locationId: s.sessions.locationId,
+      startedAt: s.sessions.startedAt,
+      finishedAt: s.sessions.finishedAt,
       locationName: s.locations.name,
       cardio: s.cardioEntries,
+      exerciseCount: sql<number>`(select count(*) from ${s.sessionExercises} where ${s.sessionExercises.sessionId} = ${s.sessions.id})`,
+      doneSetCount: sql<number>`(select count(*) ${doneSets})`,
+      volume: sql<number>`(select coalesce(sum(${s.sessionSets.volume}), 0) ${doneSets})`,
     })
     .from(s.sessions)
     .leftJoin(s.locations, eq(s.locations.id, s.sessions.locationId))
@@ -73,47 +110,24 @@ async function selectSummaries(
     .orderBy(desc(s.sessions.date), desc(s.sessions.startedAt))
     .$dynamic();
   const rows = await (limit ? query.limit(limit) : query);
-  if (rows.length === 0) return [];
-
-  const aggregates = await db
-    .select({
-      sessionId: s.sessionExercises.sessionId,
-      exerciseCount: sql<number>`count(distinct ${s.sessionExercises.id})`,
-      doneSetCount: sql<number>`count(${s.sessionSets.id}) filter (where ${s.sessionSets.done})`,
-      volume: sql<number>`coalesce(sum(${s.sessionSets.volume}) filter (where ${s.sessionSets.done}), 0)`,
-    })
-    .from(s.sessionExercises)
-    .leftJoin(
-      s.sessionSets,
-      eq(s.sessionSets.sessionExerciseId, s.sessionExercises.id),
-    )
-    .where(
-      inArray(
-        s.sessionExercises.sessionId,
-        rows.map((row) => row.session.id),
-      ),
-    )
-    .groupBy(s.sessionExercises.sessionId);
-  const bySession = new Map(aggregates.map((a) => [a.sessionId, a]));
-
-  return rows.map(({ session, locationName, cardio }) => {
-    const agg = bySession.get(session.id);
-    return {
-      id: session.id,
-      date: session.date,
-      kind: session.kind as SessionKind,
-      title: session.title,
-      dayName: session.dayName,
-      locationId: session.locationId,
+  return rows.map(
+    ({
       locationName,
-      startedAt: session.startedAt.toISOString(),
-      finishedAt: session.finishedAt?.toISOString() ?? null,
-      exerciseCount: Number(agg?.exerciseCount ?? 0),
-      doneSetCount: Number(agg?.doneSetCount ?? 0),
-      totalVolume: Number(agg?.volume ?? 0),
-      cardio: toCardio(cardio),
-    };
-  });
+      cardio,
+      exerciseCount,
+      doneSetCount,
+      volume,
+      ...session
+    }) =>
+      toSessionSummaryDto({
+        session,
+        locationName,
+        cardio: toCardio(cardio),
+        exerciseCount,
+        doneSetCount,
+        volume,
+      }),
+  );
 }
 
 /** Every session on a date (including empty ones in progress), oldest first. */
@@ -171,74 +185,26 @@ export async function getSessionDetail(
   db: Database,
   id: string,
 ): Promise<SessionDetailDto | null> {
-  const [row] = await db
-    .select({
-      session: s.sessions,
-      locationName: s.locations.name,
-      cardio: s.cardioEntries,
-    })
-    .from(s.sessions)
-    .leftJoin(s.locations, eq(s.locations.id, s.sessions.locationId))
-    .leftJoin(s.cardioEntries, eq(s.cardioEntries.sessionId, s.sessions.id))
-    .where(eq(s.sessions.id, id));
-  if (!row) return null;
-
-  const exerciseRows = await db
-    .select()
-    .from(s.sessionExercises)
-    .where(eq(s.sessionExercises.sessionId, id))
-    .orderBy(asc(s.sessionExercises.position));
-  const setRows = exerciseRows.length
-    ? await db
-        .select()
-        .from(s.sessionSets)
-        .where(
-          inArray(
-            s.sessionSets.sessionExerciseId,
-            exerciseRows.map((e) => e.id),
-          ),
-        )
-        .orderBy(asc(s.sessionSets.position))
-    : [];
-
-  const { session } = row;
-  const dto: SessionDto = {
-    id: session.id,
-    date: session.date,
-    kind: session.kind as SessionKind,
-    locationId: session.locationId,
-    programId: session.programId,
-    programDayId: session.programDayId,
-    title: session.title,
-    dayName: session.dayName,
-    bodyweightLb: session.bodyweightLb,
-    notes: session.notes,
-    startedAt: session.startedAt.toISOString(),
-    finishedAt: session.finishedAt?.toISOString() ?? null,
-    exercises: exerciseRows.map((e) => ({
-      id: e.id,
-      sessionId: e.sessionId,
-      exerciseId: e.exerciseId,
-      slotId: e.slotId,
-      position: e.position,
-      name: e.name,
-      loadType: e.loadType as LoadType,
-      baseWeight: e.baseWeight,
-      sets: setRows
-        .filter((set) => set.sessionExerciseId === e.id)
-        .map((set) => ({
-          id: set.id,
-          sessionExerciseId: set.sessionExerciseId,
-          position: set.position,
-          weight: set.weight,
-          reps: set.reps,
-          done: set.done,
-          volume: set.volume,
-        })),
-    })),
-    cardio: toCardio(row.cardio),
+  const [session, [location]] = await Promise.all([
+    getSession(db, id),
+    db
+      .select({ name: s.locations.name })
+      .from(s.sessions)
+      .innerJoin(s.locations, eq(s.locations.id, s.sessions.locationId))
+      .where(eq(s.sessions.id, id)),
+  ]);
+  if (!session) return null;
+  const doneSets = session.exercises
+    .flatMap((exercise) => exercise.sets)
+    .filter((set) => set.done);
+  return {
+    session,
+    locationName: location?.name ?? null,
+    doneSetCount: doneSets.length,
+    totalVolume:
+      Math.round(doneSets.reduce((sum, set) => sum + set.volume, 0) * 100) /
+      100,
   };
-  return { session: dto, locationName: row.locationName };
 }
 
 export async function getExerciseHistory(
@@ -246,49 +212,96 @@ export async function getExerciseHistory(
   exerciseId: string,
   limit = 30,
 ): Promise<ExerciseHistoryDto | null> {
-  const [exercise] = await db
-    .select()
-    .from(s.exercises)
-    .where(eq(s.exercises.id, exerciseId));
-
-  const rows = await db
-    .select({
-      sessionId: s.sessions.id,
-      date: s.sessions.date,
-      locationName: s.locations.name,
-      name: s.sessionExercises.name,
-      loadType: s.sessionExercises.loadType,
-      position: s.sessionSets.position,
-      weight: s.sessionSets.weight,
-      reps: s.sessionSets.reps,
-      volume: s.sessionSets.volume,
-    })
-    .from(s.sessionSets)
-    .innerJoin(
-      s.sessionExercises,
-      eq(s.sessionExercises.id, s.sessionSets.sessionExerciseId),
-    )
-    .innerJoin(s.sessions, eq(s.sessions.id, s.sessionExercises.sessionId))
-    .leftJoin(s.locations, eq(s.locations.id, s.sessions.locationId))
+  const doneOfExercise = and(
+    eq(s.sessionExercises.exerciseId, exerciseId),
+    eq(s.sessionSets.done, true),
+  );
+  const newestSessions = db
+    .select({ id: s.sessions.id })
+    .from(s.sessions)
     .where(
-      and(
-        eq(s.sessionExercises.exerciseId, exerciseId),
-        eq(s.sessionSets.done, true),
-      ),
+      sql`exists (select 1 from ${s.sessionExercises} join ${s.sessionSets} on ${s.sessionSets.sessionExerciseId} = ${s.sessionExercises.id} where ${s.sessionExercises.sessionId} = ${s.sessions.id} and ${s.sessionExercises.exerciseId} = ${exerciseId} and ${s.sessionSets.done})`,
     )
-    .orderBy(
-      desc(s.sessions.date),
-      desc(s.sessions.startedAt),
-      asc(s.sessionSets.position),
-    );
-  if (!exercise && rows.length === 0) return null;
+    .orderBy(desc(s.sessions.date), desc(s.sessions.startedAt))
+    .limit(limit);
+
+  const [[exercise], rows, [best], [anyRow]] = await Promise.all([
+    db.select().from(s.exercises).where(eq(s.exercises.id, exerciseId)),
+    db
+      .select({
+        sessionId: s.sessions.id,
+        date: s.sessions.date,
+        locationName: s.locations.name,
+        name: s.sessionExercises.name,
+        loadType: s.sessionExercises.loadType,
+        position: s.sessionSets.position,
+        weight: s.sessionSets.weight,
+        reps: s.sessionSets.reps,
+        volume: s.sessionSets.volume,
+      })
+      .from(s.sessionSets)
+      .innerJoin(
+        s.sessionExercises,
+        eq(s.sessionExercises.id, s.sessionSets.sessionExerciseId),
+      )
+      .innerJoin(s.sessions, eq(s.sessions.id, s.sessionExercises.sessionId))
+      .leftJoin(s.locations, eq(s.locations.id, s.sessions.locationId))
+      .where(and(doneOfExercise, inArray(s.sessions.id, newestSessions)))
+      .orderBy(
+        desc(s.sessions.date),
+        desc(s.sessions.startedAt),
+        asc(s.sessionSets.position),
+      ),
+    // The best set may be older than the sessions shown.
+    db
+      .select({
+        sessionId: s.sessions.id,
+        date: s.sessions.date,
+        weight: s.sessionSets.weight,
+        reps: s.sessionSets.reps,
+        volume: s.sessionSets.volume,
+      })
+      .from(s.sessionSets)
+      .innerJoin(
+        s.sessionExercises,
+        eq(s.sessionExercises.id, s.sessionSets.sessionExerciseId),
+      )
+      .innerJoin(s.sessions, eq(s.sessions.id, s.sessionExercises.sessionId))
+      .where(
+        and(
+          doneOfExercise,
+          isNotNull(s.sessionSets.reps),
+          gt(s.sessionSets.reps, 0),
+          gt(s.sessionSets.volume, 0),
+        ),
+      )
+      .orderBy(
+        desc(s.sessionSets.volume),
+        desc(s.sessions.date),
+        desc(s.sessions.startedAt),
+        asc(s.sessionSets.position),
+      )
+      .limit(1),
+    // Name fallback for a deleted exercise whose sets are all older than the page.
+    db
+      .select({
+        name: s.sessionExercises.name,
+        loadType: s.sessionExercises.loadType,
+      })
+      .from(s.sessionSets)
+      .innerJoin(
+        s.sessionExercises,
+        eq(s.sessionExercises.id, s.sessionSets.sessionExerciseId),
+      )
+      .where(doneOfExercise)
+      .limit(1),
+  ]);
+  if (!exercise && !anyRow) return null;
 
   const grouped = new Map<string, ExerciseHistoryDto["sessions"][number]>();
-  let best: ExerciseHistoryDto["bestSet"] = null;
   for (const row of rows) {
     let entry = grouped.get(row.sessionId);
     if (!entry) {
-      if (grouped.size >= limit) continue;
       entry = {
         sessionId: row.sessionId,
         date: row.date,
@@ -305,15 +318,6 @@ export async function getExerciseHistory(
       volume: row.volume,
     });
     entry.totalVolume += row.volume;
-    if (row.reps && row.volume > 0 && (!best || row.volume > best.volume)) {
-      best = {
-        sessionId: row.sessionId,
-        date: row.date,
-        weight: row.weight,
-        reps: row.reps,
-        volume: row.volume,
-      };
-    }
   }
   const sessions = [...grouped.values()].map((entry) => ({
     ...entry,
@@ -322,10 +326,21 @@ export async function getExerciseHistory(
 
   return {
     exerciseId,
-    name: exercise?.name ?? rows[0]?.name ?? "Exercise",
-    loadType: (exercise?.loadType ?? rows[0]?.loadType ?? "total") as LoadType,
+    name: exercise?.name ?? rows[0]?.name ?? anyRow?.name ?? "Exercise",
+    loadType: (exercise?.loadType ??
+      rows[0]?.loadType ??
+      anyRow?.loadType ??
+      "total") as LoadType,
     sessions,
-    bestSet: best,
+    bestSet: best
+      ? {
+          sessionId: best.sessionId,
+          date: best.date,
+          weight: best.weight,
+          reps: best.reps!,
+          volume: best.volume,
+        }
+      : null,
   };
 }
 

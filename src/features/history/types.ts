@@ -27,6 +27,9 @@ export interface SummaryResponseDto {
 export interface SessionDetailDto {
   session: SessionDto;
   locationName: string | null;
+  /** Server-computed: only sets marked done count. */
+  doneSetCount: number;
+  totalVolume: number;
 }
 
 export interface TodayDataDto {

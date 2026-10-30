@@ -1,12 +1,9 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { getDb } from "@/db/client";
-import {
-  getSession,
-  loadCatalog,
-  loadSlotTargets,
-} from "@/db/queries/sessions";
+import { getSession, loadCatalog } from "@/db/queries/sessions";
 import { SessionLogger } from "@/features/session/SessionLogger";
+import type { SetTarget } from "@/types/domain";
 import { idSchema } from "@/lib/validation/setup";
 
 export const metadata = { title: "Session" };
@@ -25,12 +22,22 @@ export default async function SessionPage({
     loadCatalog(db, { excludeSessionId: id }),
   ]);
   if (!session || session.kind !== "strength") notFound();
-  const targets = await loadSlotTargets(
-    db,
+  const wanted = new Set(
     session.exercises.flatMap((exercise) =>
       exercise.slotId ? [exercise.slotId] : [],
     ),
   );
+  const targets: Record<string, SetTarget> = {};
+  for (const program of catalog.programs)
+    for (const day of program.days)
+      for (const slot of day.slots)
+        if (wanted.has(slot.id))
+          targets[slot.id] = {
+            sets: slot.sets,
+            repMin: slot.repMin,
+            repMax: slot.repMax,
+            amrap: slot.amrap,
+          };
   const { cardio: _cardio, ...initial } = session;
   void _cardio;
   return (
