@@ -12,6 +12,8 @@ import { HttpError, parseId, parseJson, parseQuery, route } from "@/lib/http";
 const request = (body?: string) =>
   new Request("http://localhost/api/x?limit=5", { method: "POST", body });
 
+const noParams = { params: Promise.resolve({}) };
+
 beforeEach(() => {
   server.requireSession.mockReset().mockResolvedValue(undefined);
   server.requireMutationSession.mockReset().mockResolvedValue(undefined);
@@ -20,7 +22,7 @@ beforeEach(() => {
 describe("route", () => {
   it("serialises returned values as JSON", async () => {
     const handler = route("read", async () => ({ ok: true }));
-    const response = await handler(request());
+    const response = await handler(request(), noParams);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
     expect(server.requireSession).toHaveBeenCalled();
@@ -42,7 +44,7 @@ describe("route", () => {
   it("maps HttpError to its status", async () => {
     const response = await route("read", async () => {
       throw new HttpError(404, "Nope.");
-    })(request());
+    })(request(), noParams);
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "Nope." });
   });
@@ -50,7 +52,7 @@ describe("route", () => {
   it("returns auth failures without running the handler", async () => {
     server.requireSession.mockRejectedValue(new HttpError(401, "Unauthorized"));
     const handler = vi.fn();
-    const response = await route("read", handler)(request());
+    const response = await route("read", handler)(request(), noParams);
     expect(response.status).toBe(401);
     expect(handler).not.toHaveBeenCalled();
   });
@@ -61,7 +63,7 @@ describe("route", () => {
         req,
         z.object({ name: z.string().min(1, "Name is required.") }),
       ),
-    )(request(JSON.stringify({ name: "" })));
+    )(request(JSON.stringify({ name: "" })), noParams);
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "Name is required." });
   });
@@ -70,7 +72,7 @@ describe("route", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const response = await route("read", async () => {
       throw new Error("boom");
-    })(request());
+    })(request(), noParams);
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: "Something went wrong." });
     spy.mockRestore();

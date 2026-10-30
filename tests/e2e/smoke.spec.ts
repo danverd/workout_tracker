@@ -24,7 +24,8 @@ test("log in, set up gear, build a program, and log a workout", async ({
   await page.goto("/login");
   await page.getByLabel("Passcode").fill(passcode);
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  // The first request after boot also opens and migrates the embedded database.
+  await expect(page).toHaveURL(/\/$/, { timeout: 30_000 });
 
   // Equipment
   await page.goto("/setup/equipment");

@@ -26,15 +26,12 @@ export function route<P extends Record<string, string> = Record<string, never>>(
 ) {
   return async (
     request: Request,
-    context?: { params: Promise<P> },
+    context: { params: Promise<P> },
   ): Promise<Response> => {
     try {
       if (kind === "read") await requireSession();
       else await requireMutationSession();
-      const result = await handler(
-        request,
-        context ? await context.params : ({} as P),
-      );
+      const result = await handler(request, await context.params);
       return result instanceof Response ? result : NextResponse.json(result);
     } catch (error) {
       if (error instanceof HttpError)
