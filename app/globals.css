@@ -81,10 +81,13 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-button,
-input,
-select {
-  font: inherit;
+/* Layered so Tailwind's text-* utilities can override it. */
+@layer base {
+  button,
+  input,
+  select {
+    font: inherit;
+  }
 }
 
 :focus-visible {
