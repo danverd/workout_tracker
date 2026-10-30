@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -72,6 +73,7 @@ export function ProgramBuilder({
     problem: draftProblem,
   });
   const [active, setActive] = useState(initialActive);
+  const router = useRouter();
   const [archived, setArchived] = useState(program.archived);
   const [sheet, setSheet] = useState<SheetState>(null);
   const [dayToDelete, setDayToDelete] = useState<DraftDay | null>(null);
@@ -148,6 +150,7 @@ export function ProgramBuilder({
     runAction(async () => {
       await apiPost(`/api/programs/${program.id}/active`);
       setActive(true);
+      router.refresh();
     });
 
   const toggleArchived = () =>
@@ -157,6 +160,7 @@ export function ProgramBuilder({
       });
       setArchived(!archived);
       if (!archived) setActive(false);
+      router.refresh();
     });
 
   return (

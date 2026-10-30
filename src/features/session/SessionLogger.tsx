@@ -27,7 +27,7 @@ import {
 } from "./catalog";
 import { ExercisePicker } from "./ExercisePicker";
 import type { LoggerSession } from "./state";
-import { useSessionLogger } from "./useSessionLogger";
+import { needsWeight, useSessionLogger } from "./useSessionLogger";
 
 export interface SessionLoggerProps {
   initial: LoggerSession;
@@ -200,7 +200,11 @@ function LoggerBody({
                   <SetRow
                     key={set.id}
                     index={index + 1}
-                    weight={set.weight}
+                    weight={
+                      needsWeight(row.loadType, set.weight, lastSets)
+                        ? null
+                        : set.weight
+                    }
                     reps={set.reps}
                     repsHint={
                       lastRepsAt(lastSets, index) ??
@@ -208,7 +212,15 @@ function LoggerBody({
                       undefined
                     }
                     done={set.done}
-                    onToggleDone={() => logger.toggleDone(row.id, set.id)}
+                    onToggleDone={() => {
+                      const field = logger.toggleDone(row.id, set.id);
+                      if (field)
+                        setEditing({
+                          exerciseRowId: row.id,
+                          setId: set.id,
+                          field,
+                        });
+                    }}
                     onEditWeight={() =>
                       setEditing({
                         exerciseRowId: row.id,

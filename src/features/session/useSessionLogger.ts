@@ -22,6 +22,18 @@ import { suggestionsFor } from "./preview";
 
 export const DEFAULT_NEW_SETS = 3;
 
+/**
+ * A weight of 0 with no history is "never set" for anything but bodyweight
+ * work, where 0 means no added weight.
+ */
+export function needsWeight(
+  loadType: string,
+  weight: number,
+  lastSets: readonly unknown[] | undefined,
+): boolean {
+  return loadType !== "bodyweight" && weight === 0 && !lastSets?.length;
+}
+
 export interface UseSessionLoggerOptions {
   initial: LoggerSession;
   catalog: Catalog;
@@ -94,23 +106,29 @@ export function useSessionLogger({
   return {
     session,
 
-    toggleDone(exerciseRowId: string, setId: string) {
+    /**
+     * Toggles done. Returns which field the caller should open an editor for
+     * instead when the set cannot be saved as done yet.
+     */
+    toggleDone(exerciseRowId: string, setId: string): "weight" | "reps" | null {
       const row = findRow(exerciseRowId);
       const index = row?.sets.findIndex((s) => s.id === setId) ?? -1;
-      if (!row || index === -1) return;
+      if (!row || index === -1) return null;
+      const set = row.sets[index];
       const lastSets = row.exerciseId
         ? catalog.lastSets[row.exerciseId]
         : undefined;
-      commit(
-        putSet(
-          row.id,
-          toggleDone(row.sets[index], {
-            lastReps: lastRepsAt(lastSets, index),
-            targetReps: targetReps(targetFor(row.slotId)),
-            previousReps: row.sets[index - 1]?.reps ?? null,
-          }),
-        ),
-      );
+      if (!set.done && needsWeight(row.loadType, set.weight, lastSets)) {
+        return "weight";
+      }
+      const next = toggleDone(set, {
+        lastReps: lastRepsAt(lastSets, index),
+        targetReps: targetReps(targetFor(row.slotId)),
+        previousReps: row.sets[index - 1]?.reps ?? null,
+      });
+      if (next.done && next.reps === null) return "reps";
+      commit(putSet(row.id, next));
+      return null;
     },
 
     editSet(

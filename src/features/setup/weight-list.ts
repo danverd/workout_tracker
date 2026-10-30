@@ -16,10 +16,50 @@ export const emptyWeightList: WeightListState = {
   off: [],
 };
 
+/** Min, max and the most common gap (smallest on a tie) of a weight list. */
+export function inferRange(weights: readonly number[]): WeightRange | null {
+  const sorted = [...new Set(weights)].sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const counts = new Map<number, number>();
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = Math.round((sorted[i] - sorted[i - 1]) * 1000) / 1000;
+    counts.set(gap, (counts.get(gap) ?? 0) + 1);
+  }
+  let step = 0;
+  let best = 0;
+  for (const [gap, count] of counts) {
+    if (count > best || (count === best && gap < step)) {
+      step = gap;
+      best = count;
+    }
+  }
+  return {
+    min: sorted[0],
+    max: sorted[sorted.length - 1],
+    step: step > 0 ? step : 5,
+  };
+}
+
+const MAX_POOL = 300;
+
+/**
+ * Saved weights back into editing state. Gaps in the saved list (a missing 55)
+ * come back as toggled-off chips so they can be re-enabled.
+ */
 export function fromWeights(weights: number[] | null): WeightListState {
-  return weights && weights.length > 0
-    ? { mode: "list", pool: [...weights].sort((a, b) => a - b), off: [] }
-    : { mode: "list", pool: [], off: [] };
+  if (!weights || weights.length === 0) return emptyWeightList;
+  const saved = [...new Set(weights)].sort((a, b) => a - b);
+  const range = inferRange(saved);
+  const full = range ? expandRange(range) : saved;
+  const pool =
+    full.length <= MAX_POOL && saved.every((w) => full.includes(w))
+      ? full
+      : saved;
+  return {
+    mode: "list",
+    pool,
+    off: pool.filter((w) => !saved.includes(w)),
+  };
 }
 
 /** A fresh list from min / max / step; replaces the pool and clears toggles. */

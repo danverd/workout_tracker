@@ -119,7 +119,7 @@ const initial: LoggerSession = {
 };
 const targets = { [SLOT]: { sets: 3, repMin: 8, repMax: 12, amrap: false } };
 
-function setup() {
+function setup(session: LoggerSession = initial) {
   const sent: Mutation[] = [];
   const queue = createSaveQueue({
     send: async (mutation) => {
@@ -128,7 +128,7 @@ function setup() {
   });
   render(
     <SessionLogger
-      initial={initial}
+      initial={session}
       catalog={catalog}
       targets={targets}
       queue={queue}
@@ -198,6 +198,45 @@ describe("SessionLogger done toggle", () => {
     expect(
       press.getByRole("button", { name: "Set 1 reps, 1. Edit" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("SessionLogger incomplete sets", () => {
+  const bare = (weight: number): LoggerSession => {
+    const curl = row(ROW_TARGET, "Curl", null, U(8));
+    return {
+      ...initial,
+      exercises: [{ ...curl, sets: curl.sets.map((s) => ({ ...s, weight })) }],
+    };
+  };
+
+  it("opens the reps editor instead of saving a done set with no reps", async () => {
+    const { user } = setup(bare(30));
+    const curl = section("Curl");
+    await user.click(curl.getAllByRole("button", { name: "Set 1 done" })[0]);
+    expect(
+      screen.getByRole("button", { name: "Increase reps" }),
+    ).toBeInTheDocument();
+    expect(curl.getByRole("button", { name: "Set 1 done" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("shows a blank weight and asks for it before marking done", async () => {
+    const { user } = setup(bare(0));
+    const curl = section("Curl");
+    expect(
+      curl.getByRole("button", { name: "Set 1 weight, not set. Edit" }),
+    ).toBeInTheDocument();
+    await user.click(curl.getByRole("button", { name: "Set 1 done" }));
+    expect(
+      screen.getByRole("button", { name: "Increase weight" }),
+    ).toBeInTheDocument();
+    expect(curl.getByRole("button", { name: "Set 1 done" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 });
 

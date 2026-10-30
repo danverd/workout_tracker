@@ -6,6 +6,8 @@ import { ExerciseForm } from "@/features/setup/ExerciseForm";
 import { NameListManager } from "@/features/setup/NameListManager";
 import {
   applyRange,
+  fromWeights,
+  inferRange,
   toggleWeight,
   toWeights,
 } from "@/features/setup/weight-list";
@@ -122,5 +124,23 @@ describe("weight list state", () => {
     state = toggleWeight(state, 15);
     expect(toWeights(state)).toEqual([5, 10, 20, 25]);
     expect(toWeights({ ...state, mode: "none" })).toBeNull();
+  });
+});
+
+describe("weight list from saved weights", () => {
+  const gapped = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 65, 70, 75, 80];
+  it("infers min, max and the most common step", () => {
+    expect(inferRange(gapped)).toEqual({ min: 5, max: 80, step: 5 });
+    expect(inferRange([])).toBeNull();
+  });
+  it("brings removed weights back as toggled-off chips", () => {
+    const state = fromWeights(gapped);
+    expect(state.pool).toHaveLength(16);
+    expect(state.off).toEqual([55]);
+    expect(toWeights(state)).toEqual(gapped);
+    expect(toWeights(toggleWeight(state, 55))).toContain(55);
+  });
+  it("keeps odd lists as they are", () => {
+    expect(fromWeights([7, 10, 20])).toMatchObject({ off: [] });
   });
 });
