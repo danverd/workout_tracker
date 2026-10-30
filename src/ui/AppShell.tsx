@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { QueueFlusher } from "@/lib/save-queue/QueueFlusher";
 import { TabBar } from "@/ui/TabBar";
 
 export type AppShellProps = {
@@ -20,6 +21,7 @@ export function AppShell({
 }: AppShellProps) {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col">
+      <QueueFlusher />
       {header}
       <main
         className={`flex-1 px-4 pt-4 ${

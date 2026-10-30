@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import {
   applyRange,
+  inferRange,
   toggleWeight,
   type WeightListState,
 } from "@/features/setup/weight-list";
@@ -21,9 +22,10 @@ export function WeightEditor({
   state: WeightListState;
   onChange: (state: WeightListState) => void;
 }) {
-  const [min, setMin] = useState<number | null>(5);
-  const [max, setMax] = useState<number | null>(50);
-  const [step, setStep] = useState<number | null>(5);
+  const [inferred] = useState(() => inferRange(state.pool));
+  const [min, setMin] = useState<number | null>(inferred?.min ?? 5);
+  const [max, setMax] = useState<number | null>(inferred?.max ?? 50);
+  const [step, setStep] = useState<number | null>(inferred?.step ?? 5);
   const none = state.mode === "none";
   const rangeOk =
     min !== null && max !== null && step !== null && step > 0 && max >= min;
