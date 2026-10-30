@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { workoutApi } from "@/lib/workout-api";
 
 export default function LoginPage() {
   const [passcode, setPasscode] = useState("");
@@ -9,13 +8,16 @@ export default function LoginPage() {
   const router = useRouter();
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    try {
-      await workoutApi.login(passcode);
-    } catch {
+    const response = await fetch("/api/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ passcode }),
+    }).catch(() => null);
+    if (!response?.ok) {
       setError("Invalid passcode");
       return;
     }
-    router.push("/daily");
+    router.push("/");
     router.refresh();
   }
   return (

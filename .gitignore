@@ -1,6 +1,5 @@
 # Dependencies and build output
 node_modules/
-.pnpm-store/
 .next/
 out/
 coverage/
@@ -16,6 +15,9 @@ test-results/
 
 # Local planning artifacts never leave this workspace
 docs/plans/
+
+# Local embedded database (PGlite)
+.data/
 
 # Local tooling
 .DS_Store

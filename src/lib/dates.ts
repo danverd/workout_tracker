@@ -1,4 +1,4 @@
-const timeZone = "America/New_York";
+const timeZone = process.env.APP_TIME_ZONE ?? "America/New_York";
 
 export function isDateOnly(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -6,7 +6,7 @@ export function isDateOnly(value: string): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
 }
 
-export function todayInNewYork(now = new Date()): string {
+export function todayInAppTimeZone(now = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",

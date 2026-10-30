@@ -8,7 +8,7 @@ if printf '%s\n' "$staged_files" | rg -v '^\.env\.example$' | rg -q '^(docs/plan
   exit 1
 fi
 
-if git diff --cached -- . ':!pnpm-lock.yaml' | rg -n -i '(app_passcode|session_secret|database_url|api[_-]?key|private[_-]?key)\s*[:=]\s*["'"''][^"'"'']+'; then
+if git diff --cached -- . ':!package-lock.json' | rg -n -i '(app_passcode|session_secret|database_url|api[_-]?key|private[_-]?key)\s*[:=]\s*["'"''][^"'"'']+'; then
   echo "Refusing commit: a possible secret assignment was detected." >&2
   exit 1
 fi

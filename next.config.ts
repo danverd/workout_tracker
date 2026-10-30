@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
 
+const developmentScriptSource =
+  process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   headers: async () => [
@@ -12,7 +15,9 @@ const nextConfig: NextConfig = {
         {
           key: "Content-Security-Policy",
           value:
-            "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'",
+            "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline'" +
+            developmentScriptSource +
+            "; style-src 'self' 'unsafe-inline'",
         },
       ],
     },

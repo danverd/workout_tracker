@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   isDateOnly,
   monthBounds,
-  todayInNewYork,
+  todayInAppTimeZone,
   weekBounds,
 } from "@/lib/dates";
 describe("date helpers", () => {
   it("uses New York calendar dates", () =>
-    expect(todayInNewYork(new Date("2026-07-10T02:00:00Z"))).toBe(
+    expect(todayInAppTimeZone(new Date("2026-07-10T02:00:00Z"))).toBe(
       "2026-07-09",
     ));
   it("starts weeks on Monday", () =>
