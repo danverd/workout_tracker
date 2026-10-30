@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { and, count, eq, gt } from "drizzle-orm";
-import { database } from "@/db/client";
+import { getDb } from "@/db/client";
 import { failedPasscodeAttempts } from "@/db/schema";
 
 export function hashClientIdentifier(value: string) {
@@ -13,7 +13,7 @@ export function clientIdentifier(forwardedFor: string | null) {
   return forwardedFor?.split(",").at(-1)?.trim() || "unknown";
 }
 export async function tooManyAttempts(identifierHash: string) {
-  const db = database();
+  const db = await getDb();
   const [row] = await db
     .select({ total: count() })
     .from(failedPasscodeAttempts)
@@ -29,5 +29,6 @@ export async function tooManyAttempts(identifierHash: string) {
   return row.total >= 5;
 }
 export async function recordFailedAttempt(identifierHash: string) {
-  await database().insert(failedPasscodeAttempts).values({ identifierHash });
+  const db = await getDb();
+  await db.insert(failedPasscodeAttempts).values({ identifierHash });
 }
