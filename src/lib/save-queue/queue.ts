@@ -1,3 +1,4 @@
+import { ApiError } from "@/lib/api";
 import type { SaveState } from "@/ui/SaveStatus";
 import { isRetryable } from "./retry";
 import { MUTATION_TYPES, type Mutation, type QueueSnapshot } from "./types";
@@ -25,8 +26,19 @@ export const EMPTY_SNAPSHOT: QueueSnapshot = {
   status: "saved",
   pending: 0,
   retrying: false,
+  authRequired: false,
   rejected: null,
 };
+
+/**
+ * 401 (signed out) and 403 (origin check) say nothing about the change itself,
+ * so dropping it would lose data. Keep it and retry once signed back in.
+ */
+function isAuthError(error: unknown): boolean {
+  return (
+    error instanceof ApiError && (error.status === 401 || error.status === 403)
+  );
+}
 
 function isMutation(value: unknown): value is Mutation {
   if (!value || typeof value !== "object") return false;
@@ -69,8 +81,9 @@ function coalesce(tail: Mutation | undefined, next: Mutation): Mutation | null {
  * Framework-agnostic: subscribe/getSnapshot fit `useSyncExternalStore`.
  *
  * - A mutation stays queued (and persisted) until the server acknowledges it.
- * - Network errors and 5xx/429 retry the same head item with exponential
- *   backoff, or immediately on `retryNow()` (wired to the `online` event).
+ * - Network errors, 5xx/429 and 401/403 retry the same head item with
+ *   exponential backoff, or immediately on `retryNow()` (wired to the `online`
+ *   event and to signing in). 401/403 also set `authRequired`.
  * - Any other 4xx drops that mutation, records `rejected`, and moves on.
  */
 export function createSaveQueue(options: SaveQueueOptions) {
@@ -87,6 +100,7 @@ export function createSaveQueue(options: SaveQueueOptions) {
   let running = false;
   let failures = 0;
   let retrying = false;
+  let authRequired = false;
   let rejected: string | null = null;
   let persistScheduled = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -139,7 +153,7 @@ export function createSaveQueue(options: SaveQueueOptions) {
   function computeSnapshot(): QueueSnapshot {
     const status: SaveState =
       retrying || rejected ? "error" : items.length > 0 ? "saving" : "saved";
-    return { status, pending: items.length, retrying, rejected };
+    return { status, pending: items.length, retrying, authRequired, rejected };
   }
 
   function emit() {
@@ -148,6 +162,7 @@ export function createSaveQueue(options: SaveQueueOptions) {
       next.status !== snapshot.status ||
       next.pending !== snapshot.pending ||
       next.retrying !== snapshot.retrying ||
+      next.authRequired !== snapshot.authRequired ||
       next.rejected !== snapshot.rejected
     ) {
       snapshot = next;
@@ -171,9 +186,11 @@ export function createSaveQueue(options: SaveQueueOptions) {
           await send(head);
         } catch (error) {
           inFlight = null;
-          if (isRetryable(error)) {
+          const signedOut = isAuthError(error);
+          if (signedOut || isRetryable(error)) {
             failures += 1;
             retrying = true;
+            authRequired = signedOut;
             emit();
             const delay = Math.min(
               maxDelayMs,
@@ -197,6 +214,7 @@ export function createSaveQueue(options: SaveQueueOptions) {
         items.shift();
         failures = 0;
         retrying = false;
+        authRequired = false;
         persist();
         emit();
       }

@@ -234,6 +234,42 @@ describe("rejected changes", () => {
   });
 });
 
+describe("signed out", () => {
+  it.each([401, 403])(
+    "keeps a mutation rejected with %i and sends it after sign-in",
+    async (status) => {
+      const send = vi
+        .fn<(m: Mutation) => Promise<void>>()
+        .mockRejectedValueOnce(new ApiError(status, "Unauthorized"))
+        .mockResolvedValue(undefined);
+      const storage = memoryStorage();
+      const queue = createSaveQueue({ send, storage, baseDelayMs: 60_000 });
+      queue.enqueue(putSet(1));
+      queue.enqueue(putSet(2));
+      await flush();
+
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(queue.getSnapshot()).toMatchObject({
+        status: "error",
+        pending: 2,
+        retrying: true,
+        authRequired: true,
+        rejected: null,
+      });
+      expect(storage.data.has(QUEUE_STORAGE_KEY)).toBe(true);
+
+      queue.retryNow();
+      await flush();
+      expect(send).toHaveBeenCalledTimes(3);
+      expect(queue.getSnapshot()).toMatchObject({
+        status: "saved",
+        pending: 0,
+        authRequired: false,
+      });
+    },
+  );
+});
+
 describe("persistence", () => {
   it("persists pending work under a versioned key and clears it when empty", async () => {
     const { send, calls } = controlledSend();

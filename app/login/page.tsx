@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { apiPost } from "@/lib/api";
+import { getBrowserQueue } from "@/lib/save-queue/browser";
 import { Button } from "@/ui/Button";
 import { TextField } from "@/ui/TextField";
 
@@ -24,6 +25,8 @@ export default function LoginPage() {
       return;
     }
     setSubmitting(false);
+    // Send changes that were held while signed out, without waiting on backoff.
+    getBrowserQueue().retryNow();
     router.push("/");
     router.refresh();
   }

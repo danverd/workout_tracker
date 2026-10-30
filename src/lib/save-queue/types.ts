@@ -64,6 +64,8 @@ export interface QueueSnapshot {
   pending: number;
   /** True while waiting to retry after a network/5xx failure. */
   retrying: boolean;
+  /** True while retrying because the server says the owner is signed out. */
+  authRequired: boolean;
   /** Set when a change was rejected (4xx) and dropped; cleared on next edit. */
   rejected: string | null;
 }

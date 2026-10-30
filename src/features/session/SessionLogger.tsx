@@ -119,6 +119,15 @@ function LoggerBody({
       footer={
         <div className="flex flex-col">
           <SaveStatus status={saving.status} />
+          {saving.authRequired ? (
+            <p className="text-meta text-steel pb-1">
+              You are signed out. Your changes are kept on this device;{" "}
+              <Link href="/login" className="underline">
+                sign in
+              </Link>{" "}
+              to save them.
+            </p>
+          ) : null}
           {saving.rejected ? (
             <p className="text-meta text-steel pb-1">
               A change was rejected: {saving.rejected} Reload to see what is

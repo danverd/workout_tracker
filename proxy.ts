@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE } from "@/lib/auth";
+import { SESSION_COOKIE, isAuthenticated } from "@/lib/auth";
 
-export function proxy(request: NextRequest) {
+// Verifies the signed session token, not just the cookie's presence: pages
+// read the database directly, so this is their only auth check.
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const publicPath = pathname === "/login" || pathname === "/api/session";
-  if (publicPath || request.cookies.get(SESSION_COOKIE))
+  if (
+    publicPath ||
+    (await isAuthenticated(request.cookies.get(SESSION_COOKIE)?.value))
+  )
     return NextResponse.next();
   if (pathname.startsWith("/api/"))
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
